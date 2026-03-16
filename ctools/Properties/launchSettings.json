@@ -1,0 +1,16 @@
+{
+  "profiles": {
+    "tools": {
+      "commandName": "Project",
+      "commandLineArgs": "folder_with_subfolders_draw_divider"
+    },
+    "配置文件 1": {
+      "commandName": "Project",
+      "commandLineArgs": "drw2png_vlm"
+    },
+    "配置文件 2": {
+      "commandName": "Project",
+      "commandLineArgs": "folder2merge"
+    }
+  }
+}

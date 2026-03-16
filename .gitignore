@@ -1,0 +1,19 @@
+# Build outputs
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.slnx
+*.sqlite
+*.user
+*.suo
+
+# Third-party binaries
+
+*.exe
+*.pdb
+
+# Logs and temp files
+*.log
+UpgradeLog*.htm
