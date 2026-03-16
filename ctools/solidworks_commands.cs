@@ -327,6 +327,13 @@ namespace tools
         }
     }
 
+ [Command("get_all_visable_edge", Description = "获取工程图中所有可见边线", Parameters = "无", Group = "solidworks")]
+        static void GetAllVisableEdgeCommand(string[] args)
+        {
+            if (swModel == null) return;
+
+            get_all_visable_edge.run(swModel);
+        }
     }
 }
 

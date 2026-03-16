@@ -134,6 +134,8 @@ namespace tools
                 sysPrompt.AppendLine("\n***工作知识与规范:***");
                 sysPrompt.AppendLine(worksKnowledge);
             }
+
+           
             
             return sysPrompt.ToString();
         }

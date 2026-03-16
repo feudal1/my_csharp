@@ -15,6 +15,11 @@
     "folder_with_subfolders_draw_divider": {
       "commandName": "Project",
       "commandLineArgs": "folder_with_subfolders_draw_divider"
+    },
+    "get_all_visable_edge": {
+      "commandName": "Project",
+      "commandLineArgs": "get_all_visable_edge"
+      
     }
   }
 }

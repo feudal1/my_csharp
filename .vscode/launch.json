@@ -5,11 +5,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch",
-            "type": "coreclr",
+            "name": "Launch ctool",
+            "type": "dotnet",
             "request": "launch",
             "preLaunchTask": "build",
-            "program": "ctools\\bin\\Debug\\net9.0-windows\\ctool.exe",
+            "projectPath": "${workspaceFolder}/ctools/ctool.csproj",
             "args": ["drw2png_vlm"],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
