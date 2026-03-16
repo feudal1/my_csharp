@@ -2,8 +2,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.3.11520.95
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "plugin", "Plugin\plugin.csproj", "{2CDFD586-355F-346C-92BF-961D4783A12E}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "share", "share\share.csproj", "{F0438ACC-7B88-FA17-7C50-366385D1B380}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ctool", "ctools\ctool.csproj", "{92D53DF7-9FA4-334D-0F34-39B099ED37AF}"
@@ -14,10 +12,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{2CDFD586-355F-346C-92BF-961D4783A12E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2CDFD586-355F-346C-92BF-961D4783A12E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2CDFD586-355F-346C-92BF-961D4783A12E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2CDFD586-355F-346C-92BF-961D4783A12E}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F0438ACC-7B88-FA17-7C50-366385D1B380}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F0438ACC-7B88-FA17-7C50-366385D1B380}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F0438ACC-7B88-FA17-7C50-366385D1B380}.Release|Any CPU.ActiveCfg = Release|Any CPU

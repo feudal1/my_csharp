@@ -313,8 +313,8 @@ namespace tools
         {
             // 确保 VlmService 是静态类或者你已经实例化了它
             // 如果 VlmService 是静态类且方法也是静态的：
-            VlmService vlmService = new VlmService();
-            await vlmService.CallStreamingAsync(pngPath, prompt);
+            LlmService vlmService = new LlmService();
+            await vlmService.ChatAsync( prompt,pngPath);
             
             Console.WriteLine("\n----------------------------");
             Console.WriteLine("✅ 分析完成。");
