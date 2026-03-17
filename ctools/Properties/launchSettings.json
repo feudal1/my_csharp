@@ -20,6 +20,11 @@
       "commandName": "Project",
       "commandLineArgs": "get_all_visable_edge"
       
+    },
+    "export2": {
+      "commandName": "Project",
+      "commandLineArgs": "export2"
+      
     }
   }
 }

@@ -28,7 +28,7 @@ namespace tools
                   
                 }
                 PartDoc swPart = (PartDoc)swModel;
-                string outputfile = directory + "\\" + "下料" + "\\" + thickness;
+                string outputfile = directory + "\\"+"出图"+"\\" + "下料" + "\\" + thickness;
                 if (!Directory.Exists(outputfile))
                 {
                     Directory.CreateDirectory(outputfile);
@@ -102,7 +102,7 @@ Console.OutputEncoding = Encoding.UTF8;
 
                         var success=swPart.ExportToDWG(dwgFileName, fullPath, (int)swExportToDWG_e.swExportToDWG_ExportSelectedFacesOrLoops, true, dataAlignment, false, false, options, null);
 swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);
-                        if (success) { total_success = true; }
+                        if (success) { total_success = true; Console.WriteLine($"导出成功{dwgFileName}");}
 
                         
                   

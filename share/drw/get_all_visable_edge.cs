@@ -133,14 +133,16 @@ namespace tools
                             if (curve.IsLine())
                             {
                                 curveType = "直线";
-                                var length = Math.Round(curve.GetLineLength() * 1000, 2);
-                                dimension = $"长度：{length} mm";
+                                var lpara = (double[])curve.LineParams;
+                                var lstart = (double[])edge.GetStartVertex();
+                                var lend = (double[])edge.GetEndVertex();
+                      
+                         
                             }
                             else if (curve.IsCircle())
                             {
                                 curveType = "圆";
-                                var radius = Math.Round(curve.GetCircleRadius() * 1000, 2);
-                                dimension = $"直径：{radius * 2} mm";
+                      
                             }
                             else if (curve.IsEllipse())
                             {

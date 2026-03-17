@@ -6,55 +6,6 @@ namespace cad_tools
 {
     public class draw_divider
     {
-        /// <summary>
-        /// 在当前 DWG 文件中绘制一个矩形框，用于框选某个区域的 DWG 文件
-        /// </summary>
-        /// <param name="minX">框的左下角 X 坐标</param>
-        /// <param name="minY">框的左下角 Y 坐标</param>
-        /// <param name="maxX">框的右上角 X 坐标</param>
-        /// <param name="maxY">框的右上角 Y 坐标</param>
-        static public void run(double minX = 0.0, double minY = 0.0, double maxX = 1000.0, double maxY = 1000.0)
-        {
-            AcadApplication? acadApp = CadConnect.GetOrCreateInstance();
-            if (acadApp == null)
-            {
-                Console.WriteLine("错误：无法连接到 AutoCAD 应用程序。");
-                return;
-            }
-
-            AcadDocument? acadDoc = acadApp.ActiveDocument;
-            if (acadDoc == null)
-            {
-                Console.WriteLine("错误：没有活动的 AutoCAD 文档。");
-                return;
-            }
-
-            try
-            {
-                // 创建轻量多段线作为矩形框
-                var polyline = (AcadLWPolyline)acadDoc.ModelSpace.AddLightWeightPolyline(
-                    new double[] { 
-                        minX, minY,
-                        maxX, minY,
-                        maxX, maxY,
-                        minX, maxY,
-                        minX, minY  // 闭合
-                    }
-                );
-                polyline.Closed = true;
-                polyline.color = ACAD_COLOR.acYellow; // 黄色框
-      
-                polyline.Layer = "BOUNDARY"; // 放到边界层
-                
-                Console.WriteLine($"成功绘制边界框：({minX:F2}, {minY:F2}) 到 ({maxX:F2}, {maxY:F2})");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"绘制边界框失败：{ex.Message}");
-                if (ex.InnerException != null)
-                    Console.WriteLine($"内部异常：{ex.InnerException.Message}");
-            }
-        }
 
         /// <summary>
         /// 处理子文件夹遍历并为每个子文件夹的 DWG 文件绘制边界框（支持有子文件夹和没有子文件夹两种情况）
@@ -68,8 +19,8 @@ namespace cad_tools
                 return;
             }
            
-            double partSpacing = 10.0; // 零件之间的间距
-            double folderSpacing = 10.0; // 文件夹之间的间距
+            double partSpacing = 15.0; // 零件之间的间距
+            double folderSpacing = 100.0; // 文件夹之间的间距
             
             // 获取所有子文件夹
             var subDirectories = Directory.GetDirectories(selectedFolder);
@@ -130,8 +81,7 @@ namespace cad_tools
                                 currentFolderMaxY = folderCurrentMaxY;
                             }
                             
-                            // 绘制当前文件夹的边界框
-                            run(0, folderMinY, folderStartX, folderCurrentMaxY);
+                        
                             
                             Console.WriteLine($"已绘制子文件夹 {Path.GetFileName(subDir)} 的边界框：X(0 到 {folderStartX:F2}), Y({folderMinY:F2} 到 {folderCurrentMaxY:F2})");
                         }
@@ -185,8 +135,7 @@ namespace cad_tools
                             }
                         }
                         
-                        // 绘制边界框
-                        run(folderStartX - partSpacing, folderMinY, folderStartX, folderCurrentMaxY);
+                  
                         
                         Console.WriteLine($"已绘制当前文件夹的边界框：X(0 到 {folderStartX:F2}), Y({folderMinY:F2} 到 {folderCurrentMaxY:F2})");
                     }
