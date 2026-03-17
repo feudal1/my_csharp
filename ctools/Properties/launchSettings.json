@@ -2,7 +2,7 @@
   "profiles": {
     "tools": {
       "commandName": "Project",
-      "commandLineArgs": "\r\n"
+      "commandLineArgs": ""
     },
     "drw2png_vlm": {
       "commandName": "Project",
@@ -25,6 +25,11 @@
       "commandName": "Project",
       "commandLineArgs": "export2"
       
+    },
+    "asmexport2": {
+      "commandName": "Project",
+      "commandLineArgs": "asm2export"
+
     }
   }
 }

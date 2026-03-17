@@ -80,7 +80,7 @@ static private void TraverseComponent(SldWorks swApp,Component2 component,ref in
     else
     {
         ModelDoc2 doc = (ModelDoc2)component.GetModelDoc2();
-    
+        doc.Visible = true;
         if (doc != null)
         {  
             string? pathName = doc.GetPathName();
@@ -101,22 +101,17 @@ static private void TraverseComponent(SldWorks swApp,Component2 component,ref in
             // 只处理第一次遇到的零件
             if (docnameCount[docname] == 1)
             {
-                var thickness = 0.0;
+              
                
-
-                thickness = get_thickness_from_solidfolder.run(doc);
+                    var success = exportdwg2_body.run(doc);
+             
+                        successcount+=success;
+                    
                 
-                if (thickness > 0) 
-                {
-                    var success = exportdwg2.run(doc, thickness.ToString());
-                    if (success)
-                    {
-                        successcount+=1;
-                    }
-                }
             }
             
         }
+        swApp.CloseDoc(doc.GetPathName());
       
     }
 }

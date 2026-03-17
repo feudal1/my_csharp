@@ -119,13 +119,7 @@ namespace tools
         private string BuildSystemPrompt()
         {
             var sysPrompt = new StringBuilder();
-            sysPrompt.AppendLine("你可以通过输出 ```cmd 代码块来执行电脑命令，代码块内容会被系统解析并真实执行");
-            sysPrompt.AppendLine("示例：直接输出 ```cmd 换行 后面一行是真实要执行的命令，最后再用 ``` 结束代码块");
-            sysPrompt.AppendLine("禁止为了举例而输出可执行命令代码块；如需举例，请在命令前加 # 注释，或用自然语言描述而不要放进 ```cmd");
-            sysPrompt.AppendLine("只支持 Windows CMD 命令：请严格输出 CMD 可执行的命令");
-            sysPrompt.AppendLine("安全限制：禁止任何删除/破坏性操作（例如 del / erase / rmdir / rd / format / shutdown 等）");
-            sysPrompt.AppendLine("命令规则：一次只输出一条真实命令；命令要短、可复制、路径要加引号；先查看/列出再改动");
-            sysPrompt.AppendLine("回复风格：优先给结论与下一步，尽可能简短");
+
             
             // 添加 works_knowledge.txt 的内容
             var worksKnowledge = ReadWorksKnowledge();
@@ -182,7 +176,7 @@ namespace tools
             };
             messagesWithSystem.AddRange(messages);
             
-            Console.WriteLine($"用户:{userPrompt}");
+     
             
             var startTime = DateTime.Now;
             var fullResponse = !string.IsNullOrEmpty(imagePath) 

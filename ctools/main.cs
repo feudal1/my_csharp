@@ -52,17 +52,20 @@ namespace tools
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             
             RegisterCommands();
+            if (args.Length==0)
+            {
+                LlmLoopCaller  loopCaller= new LlmLoopCaller();
+           
+                var task = Task.Run(() =>      loopCaller.InteractiveLoopAsync());
+                task.GetAwaiter().GetResult();
+            }
 
             // 仅导出命令信息时，不需要连接 SolidWorks（否则在未启动 SW 时会直接失败）
             if (args.Length > 0)
             {
                 string command = args[0];
                 
-                if (command == "--export-commands")
-                {
-                    ExportCommandsToJson();
-                    return;
-                }
+             
                 
                 if (command == "--search" || command == "search" || command == "s")
                 {
@@ -129,46 +132,10 @@ namespace tools
                     ShowHelp();
                 }
             }
-            else
-            {
-                ShowHelp();
-                ExportCommandsToJson();
-            }
+    
         }
         
-       static void ExportCommandsToJson()
-        {
-            var exportData = new List<Dictionary<string, string?>>();
-            
-            if (commandInfos != null)
-            {
-                foreach (var cmd in commandInfos.Values.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
-                {
-                    exportData.Add(new Dictionary<string, string?>
-                    {
-                        { "name", cmd.Name },
-                        { "description", cmd.Description },
-                        { "parameters", cmd.Parameters },
-                        { "group", cmd.Group ?? "csharp" }  // 默认组为 "csharp"
-                    });
-                }
-            }
-            
-            var options = new JsonSerializerOptions 
-            { 
-                WriteIndented = true,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
-           string json = JsonSerializer.Serialize(exportData, options);
-            
-            // 写到可执行文件所在目录，便于 Python 直接读取/刷新
-            var outputPath = Path.Combine(AppContext.BaseDirectory, "csharp_commands.json");
-            // 避免 UTF-8 BOM，方便其他语言直接解析 JSON
-            File.WriteAllText(outputPath, json, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            
-           Console.WriteLine($"已导出 {exportData.Count} 个命令到：{outputPath}");
-        }
-        
+
        static void ShowHelp()
         {
            Console.WriteLine("\n可用命令:");

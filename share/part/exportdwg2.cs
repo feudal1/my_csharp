@@ -1,3 +1,6 @@
+//https://help.solidworks.com/2023/english/api/sldworksapi/SolidWorks.Interop.sldworks~SolidWorks.Interop.sldworks.IFlatPatternFeatureData_members.html
+//https://help.solidworks.com/2023/english/api/sldworksapi/SolidWorks.Interop.sldworks~SolidWorks.Interop.sldworks.IFeature~GetTypeName.html
+//https://help.solidworks.com/2023/english/api/sldworksapi/SolidWorks.Interop.sldworks~SolidWorks.Interop.sldworks.ISheetMetalFeatureData_members.html
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using System;
@@ -28,7 +31,7 @@ namespace tools
                   
                 }
                 PartDoc swPart = (PartDoc)swModel;
-                string outputfile = directory + "\\"+"出图"+"\\" + "下料" + "\\" + thickness;
+                string outputfile = directory + "\\"+"测试"+"\\" + "下料" + "\\" + thickness;
                 if (!Directory.Exists(outputfile))
                 {
                     Directory.CreateDirectory(outputfile);
@@ -57,12 +60,12 @@ Console.OutputEncoding = Encoding.UTF8;
                 {
                     if (swFeature.GetTypeName2() == "FlatPattern")
                     {
-                         string dwgFileName = directory + "\\" + "下料" + "\\" + thickness + "\\" + swFeature.Name + ".dwg";
+                         string dwgFileName = outputfile + "\\" + swFeature.Name + ".dwg";
                         var swFlatPatt = (FlatPatternFeatureData)swFeature.GetDefinition();
                          swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swUnSuppressFeature);
                          var fixface = (    Face2)swFlatPatt.FixedFace2;
                         var fixface_area=Math.Round( fixface.GetArea()*1000000,2);
-                       
+                        
                         var subfeat = (Feature)swFeature.GetFirstSubFeature();
                         bool hasbend=false;
                         while (subfeat != null)
@@ -87,6 +90,7 @@ Console.OutputEncoding = Encoding.UTF8;
                                 var other_face=((Face2)twoface[0]).IsSame(fixface) ? (Face2)twoface[1] : (Face2)twoface[0];
                                 var other_face_area=Math.Round( other_face.GetArea()*1000000,2);
                                 bigger_face=other_face_area > fixface_area ? other_face : fixface;
+                                
 
 
 
@@ -96,9 +100,12 @@ Console.OutputEncoding = Encoding.UTF8;
                    
                           
                         var bigger_face_ent = (Entity)bigger_face;
-                       
-                        bigger_face_ent.Select4(true, null);
+                      
+                        var select_result=bigger_face_ent.Select4(true, null);
 
+                        if (select_result)
+                        {Console.WriteLine($"选择面成功");
+                        }
 
                         var success=swPart.ExportToDWG(dwgFileName, fullPath, (int)swExportToDWG_e.swExportToDWG_ExportSelectedFacesOrLoops, true, dataAlignment, false, false, options, null);
 swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);

@@ -10,57 +10,40 @@ using System.Security.Cryptography;
 using System.Text;
 namespace tools
 {
-    public class exportdwg2
+    public class exportdwg2_body
     {
-        static public bool run(ModelDoc2 swModel, string thickness)
-        {
-            bool total_success = false;
-            try
-            {
-                                string fullPath = swModel.GetPathName();
+        private static string? directory = "";
+        private static PartDoc swPart = null;
+        private  static string fullPath = "";
+        private static string partname = "";
+        private  static double[] dataAlignment=new double[12];
+        private  static int options;
+        private static int successcount = 0;
+        
+                static public void exportfeature(Body2 body)
+                {
+                    string outputfile = "";
+                    string thickness = "无";
+                    object[] features = (object[])body.GetFeatures();
+                    foreach ( object objFeature in features)
+                    {
+                        
+                        Feature swFeature = (Feature)objFeature;
+                   
+                        if (swFeature.GetTypeName2() == "SheetMetal")
+                    {
+                        SheetMetalFeatureData swSheetMetalData = (SheetMetalFeatureData)swFeature.GetDefinition();
+                        thickness =  Math.Round(swSheetMetalData.Thickness*1000,2).ToString();
+                         outputfile = directory + "\\"+"出图"+"\\" + "下料" + "\\" + thickness;
+                        if (!Directory.Exists(outputfile))
+                        {
+                            Directory.CreateDirectory(outputfile);
+                        }
+                    }
 
-                if (string.IsNullOrEmpty(fullPath))
-                {
-                    Console.WriteLine("错误：文档尚未保存，请先保存文件。");
-                    
-                }
-                string? directory = Path.GetDirectoryName(fullPath);
-                if (string.IsNullOrEmpty(directory))
-                {
-                    Console.WriteLine("错误：无法获取文件所在目录。");
-                  
-                }
-                PartDoc swPart = (PartDoc)swModel;
-                string outputfile = directory + "\\"+"测试"+"\\" + "下料" + "\\" + thickness;
-                if (!Directory.Exists(outputfile))
-                {
-                    Directory.CreateDirectory(outputfile);
-                }
-               
-                double[] dataAlignment = new double[12];
-                dataAlignment[0] = 0.0;
-                dataAlignment[1] = 0.0;
-                dataAlignment[2] = 0.0;
-                dataAlignment[3] = 1.0;
-                dataAlignment[4] = 0.0;
-                dataAlignment[5] = 0.0;
-                dataAlignment[6] = 0.0;
-                dataAlignment[7] = 1.0;
-                dataAlignment[8] = 0.0;
-                dataAlignment[9] = 1.0;
-                dataAlignment[10] = 0.0;
-                dataAlignment[11] = 0.0;
-                int options; options = 97;
-Console.OutputEncoding = Encoding.UTF8;
-                Feature swFeature = (Feature)swModel.FirstFeature();
-
-               
-
-                while (swFeature != null)
-                {
                     if (swFeature.GetTypeName2() == "FlatPattern")
                     {
-                         string dwgFileName = outputfile + "\\" + swFeature.Name + ".dwg";
+                         string dwgFileName = outputfile + "\\" +  partname+"_"+swFeature.Name + ".dwg";
                         var swFlatPatt = (FlatPatternFeatureData)swFeature.GetDefinition();
                          swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swUnSuppressFeature);
                          var fixface = (    Face2)swFlatPatt.FixedFace2;
@@ -109,23 +92,87 @@ Console.OutputEncoding = Encoding.UTF8;
 
                         var success=swPart.ExportToDWG(dwgFileName, fullPath, (int)swExportToDWG_e.swExportToDWG_ExportSelectedFacesOrLoops, true, dataAlignment, false, false, options, null);
 swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);
-                        if (success) { total_success = true; Console.WriteLine($"导出成功{dwgFileName}");}
+                        Console.WriteLine($"{success},导出{dwgFileName}");
+                        if (success) { successcount++; }
 
                         
                   
                
                     }
-                          swFeature = (Feature)swFeature.GetNextFeature();
-                }
+                      
+                    }
+                  
+                 
+                    
+                       
+                
               
+        }
+        static public int run(ModelDoc2 swModel)
+        {
+           
+            try
+            {
+                successcount = 0;
+                              fullPath = swModel.GetPathName();
+                              partname = Path.GetFileNameWithoutExtension(fullPath);
+
+                if (string.IsNullOrEmpty(fullPath))
+                {
+                    Console.WriteLine("错误：文档尚未保存，请先保存文件。");
+                    
+                }
+                 directory = Path.GetDirectoryName(fullPath);
+                if (string.IsNullOrEmpty(directory))
+                {
+                    Console.WriteLine("错误：无法获取文件所在目录。");
+                  
+                }
+                swPart = (PartDoc)swModel;
+    
+               
+         
+                dataAlignment[0] = 0.0;
+                dataAlignment[1] = 0.0;
+                dataAlignment[2] = 0.0;
+                dataAlignment[3] = 1.0;
+                dataAlignment[4] = 0.0;
+                dataAlignment[5] = 0.0;
+                dataAlignment[6] = 0.0;
+                dataAlignment[7] = 1.0;
+                dataAlignment[8] = 0.0;
+                dataAlignment[9] = 1.0;
+                dataAlignment[10] = 0.0;
+                dataAlignment[11] = 0.0;
+                 options = 97;
+Console.OutputEncoding = Encoding.UTF8;
+               
+
+                var partdoc = (PartDoc)swModel;
+                var bodys = (object[])partdoc.GetBodies2((int)swBodyType_e.swSolidBody, false);
+
+                foreach (var objbody in bodys)
+                {
+                    var body = (Body2)objbody;
+                   
+                   
+                        exportfeature(body);
+                    
+                  
+                    
+                }
+                
+                
+                
+
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"发生错误: {ex.Message}");
                 Console.WriteLine("提示：请确保 SolidWorks 正在运行。");
             }
-            return total_success;
-            
+        
+            return successcount;
         }
     }
 }
