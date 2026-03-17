@@ -21,19 +21,25 @@ namespace tools
         public string? Description { get; set; }
     }
     
-    // 命令类型枚举
-    enum CommandType
+    // 命令类型枚举 (公开)
+    public enum CommandType
     {
         Sync,      // 同步命令
         Async      // 异步命令
     }
-    partial class Program
+    public partial class Program
     {
         static Dictionary<string, Func<string[], Task>>? asyncCommands;
         static SldWorks? swApp;
         static ModelDoc2? swModel;
         
-        class CommandInfo
+        // 添加公共静态属性，允许外部访问命令字典和 SolidWorks 实例
+        public static Dictionary<string, CommandInfo>? Commands => commandInfos;
+        public static SldWorks? SwApp => swApp;
+        public static ModelDoc2? SwModel => swModel;
+        
+        // 命令信息类 (公开)
+        public class CommandInfo
         {
           public string Name { get; set; } = "";
           public string? Description { get; set; }
@@ -52,6 +58,8 @@ namespace tools
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             
             RegisterCommands();
+            GenerateCommandsDescriptionFile();
+            
             if (args.Length==0)
             {
                 LlmLoopCaller  loopCaller= new LlmLoopCaller();
@@ -133,6 +141,51 @@ namespace tools
                 }
             }
     
+        }
+        
+        /// <summary>
+        /// 生成命令描述文件供 AI 使用
+        /// </summary>
+        static void GenerateCommandsDescriptionFile()
+        {
+            try
+            {
+                string llmDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm");
+                if (!Directory.Exists(llmDir))
+                {
+                    Directory.CreateDirectory(llmDir);
+                }
+                
+                string commandsFile = Path.Combine(llmDir, "commands_description.txt");
+                
+                var sb = new StringBuilder();
+                sb.AppendLine("=== SolidWorks 自动化命令列表 ===");
+                sb.AppendLine($"生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                sb.AppendLine("使用方法：在对话中使用【命令名】参数 来调用命令\n");
+                
+                if (commandInfos != null)
+                {
+                    foreach (var cmd in commandInfos.Values.OrderBy(k => k.Name))
+                    {
+                        sb.AppendLine($"\n【{cmd.Group ?? "默认"}】{cmd.Name} {(cmd.CommandType == CommandType.Async ? "(异步)" : "")}");
+                        if (!string.IsNullOrEmpty(cmd.Description))
+                        {
+                            sb.AppendLine($"    说明：{cmd.Description}");
+                        }
+                        if (!string.IsNullOrEmpty(cmd.Parameters))
+                        {
+                            sb.AppendLine($"    参数：{cmd.Parameters}");
+                        }
+                    }
+                }
+                
+                File.WriteAllText(commandsFile, sb.ToString(), Encoding.UTF8);
+                Console.WriteLine($"\n✓ 命令描述文件已生成：{commandsFile}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\n生成命令描述文件失败：{ex.Message}");
+            }
         }
         
 

@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -24,6 +25,7 @@ namespace tools
         private readonly string _shotMemoryFile;
         private readonly string _memoryDir;
         private readonly string _worksKnowledgeFile;
+        private readonly string _commandsDescriptionFile;
 
         public LlmService()
         {
@@ -42,6 +44,7 @@ namespace tools
             _shotMemoryFile = Path.Combine(llmDir, "shot_memory.json");
             _memoryDir = Path.Combine(llmDir, "memory_data");
             _worksKnowledgeFile = Path.Combine(llmDir, "works_knowledge.txt");
+            _commandsDescriptionFile = Path.Combine(llmDir, "commands_description.txt");
             
             if (!Directory.Exists(_memoryDir))
             {
@@ -114,12 +117,61 @@ namespace tools
         }
 
         /// <summary>
-        /// 构建 System Prompt（包含本地工作知识）
+        /// 执行 search 搜索并获取相关命令（使用 main.cs 中的现成方法）
+        /// </summary>
+        private string SearchCommands(string keyword, double threshold = 0.3, int? topK = null)
+        {
+            try
+            {
+                // 通过反射调用 Program.SearchCommands 方法
+                var programType = typeof(Program);
+                var searchMethod = programType.GetMethod("SearchCommands", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                
+                if (searchMethod == null)
+                {
+                    Console.WriteLine("未找到 SearchCommands 方法");
+                    return "";
+                }
+                
+                // 捕获控制台输出
+                var sbOutput = new StringBuilder();
+                var originalOut = Console.Out;
+                using (var writer = new StringWriter(sbOutput))
+                {
+                    Console.SetOut(writer);
+                    
+                    // 调用静态方法
+                    searchMethod.Invoke(null, [keyword, threshold, topK]);
+                    
+                    Console.SetOut(originalOut);
+                }
+                
+                // 返回捕获的输出
+                return sbOutput.ToString();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"搜索命令失败：{ex.Message}");
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// 构建 System Prompt（仅包含基础信息，不包含全部命令）
         /// </summary>
         private string BuildSystemPrompt()
         {
             var sysPrompt = new StringBuilder();
 
+            sysPrompt.AppendLine("你是一个 SolidWorks 自动化助手，可以帮助用户执行各种 SolidWorks 操作。");
+            sysPrompt.AppendLine("当用户需要执行 SolidWorks 操作时，请使用以下严格格式调用命令：");
+            sysPrompt.AppendLine("do_【命令名】参数 1 参数 2 ...");
+            sysPrompt.AppendLine("例如：do_【export_dwg】C:\\path\\to\\file.sldprt");
+            sysPrompt.AppendLine("重要：");
+            sysPrompt.AppendLine("1. 必须使用 do_前缀和中文方括号【】来标识命令");
+            sysPrompt.AppendLine("2. 执行命令前必须等待用户确认，用户输入 'y' 才会执行，'n' 跳过，'auto' 切换到自动模式。");
+            sysPrompt.AppendLine("3. 不要使用其他格式（如单独的【】或英文括号）来调用命令。");
             
             // 添加 works_knowledge.txt 的内容
             var worksKnowledge = ReadWorksKnowledge();
@@ -129,8 +181,11 @@ namespace tools
                 sysPrompt.AppendLine(worksKnowledge);
             }
 
-           
-            
+            sysPrompt.AppendLine("\n***命令格式示例:***");
+            sysPrompt.AppendLine("正确：do_【export_dwg】C:\\work\\part.sldprt");
+            sysPrompt.AppendLine("错误：【export_dwg】C:\\work\\part.sldprt (缺少 do_前缀)");
+            sysPrompt.AppendLine("错误：do_[export_dwg] C:\\work\\part.sldprt (使用了英文括号)");
+
             return sysPrompt.ToString();
         }
 
@@ -163,16 +218,26 @@ namespace tools
         {
             string apiKey = await GetApiKeyAsync();
 
-            // 加载历史消息
+            // 先对用户输入进行 search 搜索，只导入相关的命令到上下文
+            string searchResult = SearchCommands(userPrompt, threshold: 0.3, topK: 5);
+            Debug.Write($"searchResult:{searchResult}");
+            // 加载历史消息（不包含 system）
             var messages = LoadMessagesFromDisk();
             
-            // 构建 system prompt
+            // 构建基础的 system prompt（不包含具体命令）
             var sysPrompt = BuildSystemPrompt();
+            
+            // 将搜索结果添加到 system prompt 中
+            if (!string.IsNullOrEmpty(searchResult))
+            {
+                sysPrompt += "\n***相关命令:***\n";
+                sysPrompt += searchResult;
+            }
             
             // 构建完整的消息列表
             var messagesWithSystem = new List<ChatMessage>
             {
-                new ChatMessage { Role = "system", Content = sysPrompt }
+                new ChatMessage { Role = "system", Content = sysPrompt.ToString() }
             };
             messagesWithSystem.AddRange(messages);
             

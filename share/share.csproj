@@ -32,9 +32,6 @@
     <None Update="dwgmaping">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="llm\works_knowledge.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
 
