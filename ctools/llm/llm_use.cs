@@ -220,7 +220,7 @@ namespace tools
 
             // 先对用户输入进行 search 搜索，只导入相关的命令到上下文
             string searchResult = SearchCommands(userPrompt, threshold: 0.3, topK: 5);
-            Debug.Write($"searchResult:{searchResult}");
+            Console.Write($"searchResult:{searchResult}");
             // 加载历史消息（不包含 system）
             var messages = LoadMessagesFromDisk();
             

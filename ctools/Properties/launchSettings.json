@@ -30,6 +30,14 @@
       "commandName": "Project",
       "commandLineArgs": "asm2export"
 
+    },
+    "asm2step": {
+      "commandName": "Project",
+      "commandLineArgs": "asm2step"
+    },
+    "folder2step": {
+      "commandName": "Project",
+      "commandLineArgs": "folder2step"
     }
   }
 }

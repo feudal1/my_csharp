@@ -161,7 +161,10 @@ namespace tools
                 var sb = new StringBuilder();
                 sb.AppendLine("=== SolidWorks 自动化命令列表 ===");
                 sb.AppendLine($"生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                sb.AppendLine("使用方法：在对话中使用【命令名】参数 来调用命令\n");
+                sb.AppendLine("\n***命令格式说明:***");
+                sb.AppendLine("1. 无参数命令：直接输入 do_【命令名】");
+                sb.AppendLine("2. 有参数命令：do_【命令名】参数值");
+                sb.AppendLine("3. 执行前需用户确认 (y/n/auto)\n");
                 
                 if (commandInfos != null)
                 {
@@ -172,9 +175,17 @@ namespace tools
                         {
                             sb.AppendLine($"    说明：{cmd.Description}");
                         }
-                        if (!string.IsNullOrEmpty(cmd.Parameters))
+                        
+                        // 明确标识参数
+                        if (string.IsNullOrEmpty(cmd.Parameters) || cmd.Parameters == "无")
+                        {
+                            sb.AppendLine($"    参数：无");
+                            sb.AppendLine($"    示例：do_【{cmd.Name}】");
+                        }
+                        else
                         {
                             sb.AppendLine($"    参数：{cmd.Parameters}");
+                            sb.AppendLine($"    示例：do_【{cmd.Name}】<参数值>");
                         }
                     }
                 }
@@ -401,10 +412,18 @@ namespace tools
             Console.WriteLine($"\n找到 {results.Count} 个匹配的命令：\n");
             foreach (var result in results)
             {
-                Console.WriteLine($"【{result.Group}】 {result.Name} (相似度：{result.Score})");
+                Console.WriteLine($" {result.Name} (相似度：{result.Score})");
+                Console.WriteLine($"    分组：{result.Group}");
                 if (!string.IsNullOrEmpty(result.Description))
                 {
                     Console.WriteLine($"    说明：{result.Description}");
+                }
+                
+                // 显示参数信息
+                var cmd = commandInfos.Values.FirstOrDefault(c => c.Name == result.Name);
+                if (cmd != null && !string.IsNullOrEmpty(cmd.Parameters))
+                {
+                    Console.WriteLine($"    参数：{cmd.Parameters}");
                 }
             }
         }

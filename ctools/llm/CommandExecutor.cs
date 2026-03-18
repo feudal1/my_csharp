@@ -36,7 +36,16 @@ namespace tools
                     // 严格格式：do_【命令名】参数
                     commandName = strictMatch.Groups[1].Value.Trim();
                     string parameters = strictMatch.Groups[2].Value.Trim();
-                    args = string.IsNullOrEmpty(parameters) ? new string[0] : parameters.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    
+                    // 只有当参数字符串非空时才解析参数
+                    if (!string.IsNullOrEmpty(parameters))
+                    {
+                        args = parameters.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    }
+                    else
+                    {
+                        args = new string[0];
+                    }
                 }
                 else
                 {

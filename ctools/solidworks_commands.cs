@@ -253,6 +253,8 @@ namespace tools
                     }
                 }
             }
+            
+            
         }
 
                 [Command("add_name2info", Description = "添加零件名称到自定义属性", Parameters = "无", Group = "solidworks")]
@@ -276,7 +278,7 @@ namespace tools
 
             var npgFileName = drw2png.run(swModel, swApp);
         }
-        [Command("drw2png_vlm", Description = "导出工程图为 PNG 并调用 VLM 分析", Parameters = "无", Group = "solidworks")]
+        [Command("drw2png2vlm", Description = "导出工程图为 PNG 并调用 VLM 分析", Parameters = "无", Group = "solidworks")]
         static async Task Drw2PngVlmCommand(string[] args)
     {
         // 1. 基础检查
@@ -334,6 +336,85 @@ namespace tools
 
             get_all_visable_edge.run(swModel);
         }
+
+        [Command("asm2step", Description = "装配体导出为 STEP 格式", Parameters = "无", Group = "solidworks")]
+        static void Asm2StepCommand(string[] args)
+        {
+            if (swApp == null || swModel == null) return;
+
+            asm2step.run(swModel);
+        }
+        [Command("folder2step", Description = "文件夹内零件装配体导出为 STEP 格式", Parameters = "无", Group = "solidworks")]
+        static void folder2StepCommand(string[] args)
+        {
+            if (swApp == null) return;
+
+            var files = FolderPicker.GetFileNamesFromSelectedFolder();
+            if (files != null)
+            {
+                foreach (var file in files)
+                {
+                    // 筛选 SLDDRW 后缀的文件
+                    if (file.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 打开工程图文件
+                         swModel = (ModelDoc2)swApp.OpenDoc6(
+                            file, 
+                            (int)swDocumentTypes_e.swDocPART, 
+                            (int)swOpenDocOptions_e.swOpenDocOptions_Silent, 
+                            "", 
+                            0, 
+                            0);
+                    }
+                    else if (file.EndsWith(".SLDASM", StringComparison.OrdinalIgnoreCase))
+                    {
+                        swModel = (ModelDoc2)swApp.OpenDoc6(
+                            file, 
+                            (int)swDocumentTypes_e.swDocASSEMBLY, 
+                            (int)swOpenDocOptions_e.swOpenDocOptions_Silent, 
+                            "", 
+                            0, 
+                            0);
+                    }
+                    else
+                    {continue;
+                    }
+
+                    try
+                    {
+                       
+
+                        if (swModel != null)
+                        {
+                            swModel.Visible = true;
+                            // 转换为 DWG
+                            asm2step.run(swModel);
+                            
+                            // 关闭已处理的文档
+                            swApp.CloseDoc(swModel.GetTitle());
+                                
+            
+            
+                            Console.WriteLine($"已转换：{swModel.GetTitle()}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"无法打开文件：{file}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"转换失败 {file}: {ex.Message}");
+                    }
+                }
+            }
+
+        }
+        
+        
     }
+  
 }
+    
+
 

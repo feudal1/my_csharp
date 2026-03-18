@@ -56,7 +56,7 @@ namespace tools
                     string parameters = match.Groups[2].Value.Trim();
                     
                     string fullCommand = $"{commandName} {parameters}".Trim();
-                    Console.WriteLine($"\n建议执行的命令：{fullCommand}");
+                    Console.WriteLine($"\n建议执行的命令：{fullCommand} {parameters}");
                     
                     // 等待用户确认
                     if (_requireConfirmation)
@@ -72,7 +72,7 @@ namespace tools
                         else if (userInput != "y" && userInput != "yes")
                         {
                             Console.WriteLine("已跳过此命令");
-                            results.Add($"命令 '{commandName}' 已被用户拒绝");
+                            results.Add($"命令 '{commandName} {parameters}' 已被用户拒绝");
                             continue;
                         }
                     }

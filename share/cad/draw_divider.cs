@@ -64,6 +64,32 @@ namespace cad_tools
             double folderStartX = currentX;
             double folderCurrentMaxY = currentY;
             
+     
+            // 2. 递归处理所有子文件夹
+            var subDirectories = Directory.GetDirectories(folderPath);
+            foreach (var subDir in subDirectories)
+            {
+                Console.WriteLine($"\n>> 进入子文件夹：{Path.GetFileName(subDir)}");
+                
+                var result = process_folder_recursive(
+                    subDir,
+                    folderStartX,  // 每个子文件夹都从相同的 X 起始位置开始
+                    currentY,      // 从当前最大 Y 之后开始
+                    partSpacing,
+                    folderSpacing,
+                    textHeight,
+                    textOffsetY);
+                
+                // 更新全局最大 Y
+                if (result[1] > folderCurrentMaxY)
+                {
+                    folderCurrentMaxY = result[1];
+                }
+                
+                // 下一个子文件夹需要从当前最大 Y + 间距开始
+                currentY = folderCurrentMaxY + folderSpacing;
+            }
+            
             // 1. 先处理当前文件夹中的 DWG 文件（如果有的话）
             var dwgFiles = Directory.GetFiles(folderPath, "*.dwg");
             if (dwgFiles.Length > 0)
@@ -108,32 +134,7 @@ namespace cad_tools
                 // 如果有子文件夹，需要从新的 Y 位置开始
                 currentY = dwgCurrentMaxY + folderSpacing;
             }
-            
-            // 2. 递归处理所有子文件夹
-            var subDirectories = Directory.GetDirectories(folderPath);
-            foreach (var subDir in subDirectories)
-            {
-                Console.WriteLine($"\n>> 进入子文件夹：{Path.GetFileName(subDir)}");
-                
-                var result = process_folder_recursive(
-                    subDir,
-                    folderStartX,  // 每个子文件夹都从相同的 X 起始位置开始
-                    currentY,      // 从当前最大 Y 之后开始
-                    partSpacing,
-                    folderSpacing,
-                    textHeight,
-                    textOffsetY);
-                
-                // 更新全局最大 Y
-                if (result[1] > folderCurrentMaxY)
-                {
-                    folderCurrentMaxY = result[1];
-                }
-                
-                // 下一个子文件夹需要从当前最大 Y + 间距开始
-                currentY = folderCurrentMaxY + folderSpacing;
-            }
-            
+
             return new double[] { folderStartX, folderCurrentMaxY };
         }
 

@@ -2,6 +2,8 @@
 <project version="4">
   <component name="UserContentModel">
     <attachedFolders>
+      <Path>.</Path>
+      <Path>ctools</Path>
       <Path>ctools/bin/Debug/net9.0-windows/llm</Path>
     </attachedFolders>
     <explicitIncludes />
