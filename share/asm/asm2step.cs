@@ -22,7 +22,7 @@ public class asm2step
         string folderName = new DirectoryInfo(currentDirectory).Name;
                 
         // 构建完整的输出路径
-        string outputPath = Path.Combine(currentDirectory, $"{partname}.STEP");
+        string outputPath = Path.Combine(parentDirectory, $"{folderName}.STEP");
                 
         var result=swModel.SaveAs3(outputPath, 0, 2);
                 
