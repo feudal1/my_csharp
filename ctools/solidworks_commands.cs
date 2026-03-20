@@ -155,37 +155,7 @@ namespace tools
             New_drw.run(swApp, swModel);
         }
 
-        [Command("get_dim_info", Description = "【AI 训练使用】获取尺寸标注信息", Parameters = "无", Group = "solidworks")]
-        static void GetDimInfoCommand(string[] args)
-        {
-            if (swModel == null) return;
 
-            get_dim_info.run(swModel);
-        }
-
-        [Command("get_views_graph", Description = "【AI 训练使用】获取视图图形结构", Parameters = "无", Group = "solidworks")]
-        static void GetViewsGraphCommand(string[] args)
-        {
-            if (swApp == null || swModel == null) return;
-
-            get_views_graph.run(swModel);
-        }
-
-        [Command("get_all_face", Description = "【AI 训练使用】获取所有面信息", Parameters = "无", Group = "solidworks")]
-        static void GetAllFaceCommand(string[] args)
-        {
-            if (swModel == null) return;
-
-            get_all_face.run(swModel);
-        }
-
-        [Command("get_all_edges", Description = "【AI 训练使用】获取所有边信息", Parameters = "无", Group = "solidworks")]
-        static void GetAllEdgesCommand(string[] args)
-        {
-            if (swModel == null) return;
-
-            get_all_edges.run(swModel);
-        }
 
         [Command("export2", Description = "导出当前零件展开为 DWG 文件（版本 2）", Parameters = "无", Group = "solidworks")]
         static void Export2Command(string[] args)
@@ -264,13 +234,7 @@ namespace tools
 
             add_name2info.run(swModel);
         }
-             [Command("get_tap_hole", Description = "获取零件厚度（钣金特征）", Parameters = "无", Group = "solidworks")]
-        static void GetTapHoleCommand(string[] args)
-        {
-            if (swModel == null) return;
-
-            get_tap_hole.run(swModel);
-        }
+           
         [Command("drw2png", Description = "将工程图转换为 NPG 格式", Parameters = "无", Group = "solidworks")]
         static void Drw2NpgCommand(string[] args)
         {

@@ -1,10 +1,12 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.3.11520.95
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "share", "share\share.csproj", "{F0438ACC-7B88-FA17-7C50-366385D1B380}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ctool", "ctools\ctool.csproj", "{92D53DF7-9FA4-334D-0F34-39B099ED37AF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "recognize", "recognize\recognize.csproj", "{0E9ED421-3FFD-4825-B50F-48971543D2D3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -20,6 +22,10 @@ Global
 		{92D53DF7-9FA4-334D-0F34-39B099ED37AF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{92D53DF7-9FA4-334D-0F34-39B099ED37AF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{92D53DF7-9FA4-334D-0F34-39B099ED37AF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0E9ED421-3FFD-4825-B50F-48971543D2D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0E9ED421-3FFD-4825-B50F-48971543D2D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0E9ED421-3FFD-4825-B50F-48971543D2D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0E9ED421-3FFD-4825-B50F-48971543D2D3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
