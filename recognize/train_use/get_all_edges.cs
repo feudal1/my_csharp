@@ -44,7 +44,11 @@ namespace tools
                     {
                         Face2 face1 = (Face2)twoAdjacentFaces[0];
                         Face2 face2 = (Face2)twoAdjacentFaces[1];
-
+                        var face1_surface=face1.IGetSurface();
+                        var face1_type = face1_surface.IsCylinder()?"圆柱面":"平面";
+                        var face2_surface=face2.IGetSurface();
+                        var face2_type = face2_surface.IsCylinder()?"圆柱面":"平面";
+                        Console.WriteLine($"face1type：{face1_type}，face2type：{face2_type}");
                         // 为每个面分配唯一索引
                         if (!faceIndexMap.ContainsKey(face1))
                         {

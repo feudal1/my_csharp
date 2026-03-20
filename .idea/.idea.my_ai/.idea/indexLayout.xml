@@ -5,6 +5,7 @@
       <Path>.</Path>
       <Path>ctools</Path>
       <Path>ctools/bin/Debug/net9.0-windows/llm</Path>
+      <Path>recognize</Path>
     </attachedFolders>
     <explicitIncludes />
     <explicitExcludes />
