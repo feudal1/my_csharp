@@ -19,8 +19,9 @@ namespace tools
                  if (File.Exists(drwpath))
                  {
                      Console.WriteLine($"工程图已存在，直接打开：{drwpath}");
-                  swApp.OpenDoc6(drwpath, (int)swDocumentTypes_e.swDocDRAWING, 0, "", 0, 0);
-                     return;
+                  swApp.OpenDoc(drwpath, (int)swDocumentTypes_e.swDocDRAWING);
+                    
+                  return;
                  }
                  
               swApp.NewDocument(@"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates\gb_a4.drwdot", 0, 0, 0);

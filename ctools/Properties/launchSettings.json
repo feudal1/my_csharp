@@ -42,6 +42,11 @@
     "plan1": {
       "commandName": "Project",
       "commandLineArgs": "plan1"
+    },
+    "new_drw": {
+      "commandName": "Project",
+      "commandLineArgs": "new_drw"
+      
     }
   }
 }
