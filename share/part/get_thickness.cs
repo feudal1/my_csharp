@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using SolidWorks.Interop.sldworks;
@@ -10,9 +11,10 @@ namespace tools
     {
         static public double run(ModelDoc2 swModel)
         {
+       
             try
             {
-Console.OutputEncoding = Encoding.UTF8;
+
                 Feature swFeature = (Feature)swModel.FirstFeature();
                 while (swFeature != null)
                 {
@@ -22,6 +24,7 @@ Console.OutputEncoding = Encoding.UTF8;
                         double thickness = Math.Round(swSheetMetalData.Thickness*1000,2);
 
                         Console.WriteLine("厚度:"+thickness);
+                        Debug.WriteLine("厚度:"+thickness);
                         return thickness;
                     }
                           swFeature = (Feature)swFeature.GetNextFeature();

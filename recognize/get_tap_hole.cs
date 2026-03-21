@@ -63,7 +63,7 @@ namespace tools
                 try
                 {
 
-                    Console.OutputEncoding = Encoding.UTF8;
+                
                     Feature swFeature = (Feature)partDoc.FirstFeature();
                     while (swFeature != null)
                     {

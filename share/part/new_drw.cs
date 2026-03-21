@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using SolidWorks.Interop.sldworks;
@@ -12,6 +13,7 @@ namespace tools
         {
             try
             {
+                var partdoc = swModel;
                 string fullpath= swModel .GetPathName();
                       string drwpath = swModel.GetPathName().Replace("prt", "PRT").Replace("PRT", "drw");
                  
@@ -48,11 +50,17 @@ namespace tools
               swModel.Extension.SelectByID2(view1.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
                 var view3 = drawingDoc.CreateUnfoldedViewAt3(0.08, 0.15, 0, false);
                swModel.SetUserPreferenceToggle((int)swUserPreferenceToggle_e.swDisplaySketches, false);
-
+              // swModel.Extension.SelectByID2(view1.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
+            
+              var view4 = drawingDoc.CreateFlatPatternViewFromModelView3( partdoc.GetPathName(), "",0.20, 0.15, 0,false,false);
+        
+               
           
                swModel.EditRebuild3();
-               swModel.SaveAs3(drwpath, 0, 0);
+              swModel.SaveAs3(drwpath, 0, 0);
   Console.WriteLine($"成功，已创建工程图{drwpath}");
+ 
+
                 }
             
             

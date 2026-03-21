@@ -13,7 +13,7 @@ namespace tools
         {
             try
             {
-                Console.OutputEncoding = Encoding.UTF8;
+           
                 // 后续逻辑不变...
         
 

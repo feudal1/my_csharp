@@ -33,18 +33,19 @@ using System.Text;
             }
 
             ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
             if (swModel == null)
             {
                 Debug.WriteLine("没有打开的文档");
                 swApp.SendMsgToUser("请先打开一个工程图文档");
                 return;
             }
-
+           
             // 使用 share 项目中的 drw2dwg 方法转换 DWG
             var dwgFileName = drw2dwg.run(swModel, swApp);
-      
+
+
            
-            
             Debug.WriteLine($"工程图已转换为 DWG: {dwgFileName}");
         }
         catch (Exception ex)

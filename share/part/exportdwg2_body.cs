@@ -145,7 +145,7 @@ swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);
                 dataAlignment[10] = 0.0;
                 dataAlignment[11] = 0.0;
                  options = 97;
-Console.OutputEncoding = Encoding.UTF8;
+
                
 
                 var partdoc = (PartDoc)swModel;

@@ -6,6 +6,7 @@
       <Path>ctools</Path>
       <Path>ctools/bin/Debug/net9.0-windows/llm</Path>
       <Path>recognize</Path>
+      <Path>设计笔记</Path>
     </attachedFolders>
     <explicitIncludes />
     <explicitExcludes />

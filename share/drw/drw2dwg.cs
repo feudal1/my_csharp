@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using SolidWorks.Interop.sldworks;
@@ -20,12 +21,7 @@ namespace tools
                 
             }
             
-            string outputfile = directory + "\\" + "出图" + "\\" + "工程图";
-            if (!Directory.Exists(outputfile))
-            {
-                Directory.CreateDirectory(outputfile);
-            }
-            string dwgFileName = directory + "\\" + "出图" + "\\" +  "工程图" + "\\" + Path.GetFileNameWithoutExtension(fullpath) + ".dwg";
+          
             swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1);
           swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
            
@@ -58,7 +54,24 @@ namespace tools
 
                 }
             }
-            
+
+    
+
+          
+           var drawingDoc = (DrawingDoc)swModel;
+          
+            var swSheet = (Sheet)drawingDoc.IGetCurrentSheet();
+            var swViews = (object[])swSheet.GetViews();
+            var partDoc = ((SolidWorks.Interop.sldworks.View)swViews[1]).ReferencedDocument;
+          
+            var thickness=get_thickness.run(partDoc);
+            Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
+            string outputfile = directory + "\\" + "出图" + "\\" + "工程图"+"\\"+ thickness.ToString() ;
+            if (!Directory.Exists(outputfile))
+            {
+                Directory.CreateDirectory(outputfile);
+            }
+            string dwgFileName = outputfile + "\\" + Path.GetFileNameWithoutExtension(fullpath) + ".dwg";
             int errors=0, warnings=0;
             var result = swModel.SaveAs4(
                 dwgFileName, 

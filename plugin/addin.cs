@@ -1,4 +1,4 @@
-﻿using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swpublished;
 using SolidWorksTools;
 using System;
@@ -10,6 +10,8 @@ using SolidWorks.Interop.swconst;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Reflection;
+using System.Text;
 namespace SolidWorksAddinStudy
 {
     [Guid("D9C5D3A4-3B9F-4ACF-BC19-6D77D39C47CD"), ComVisible(true)]
@@ -71,9 +73,19 @@ namespace SolidWorksAddinStudy
            
             return true;
         }
-private void ShowWelcomeImage()
-    {
-        try
+/// <summary>
+        /// 获取程序集构建时间
+        /// </summary>
+        private DateTime GetBuildTime()
+        {
+            Assembly assembly = Assembly.GetExecutingAssembly();
+            string filePath = assembly.Location;
+            return new FileInfo(filePath).LastWriteTime;
+        }
+        
+        private void ShowWelcomeImage()
+        {
+            try
         {
               string pluginDir = Path.GetDirectoryName(typeof(AddinStudy).Assembly.Location);
             string imagePath = Path.Combine(pluginDir, "welcome.png");
@@ -86,9 +98,13 @@ private void ShowWelcomeImage()
 
                 using (Image img = Image.FromFile(imagePath))
             {
+                // 获取构建时间
+                DateTime buildTime = GetBuildTime();
+                string versionText = $"版本: {buildTime:yyyy-MM-dd HH:mm}";
+                
                 Form form = new Form
                 {
-                    Text = "",
+                    Text = versionText,
                     Size = new Size(img.Width + 40, img.Height + 90),
                     StartPosition = FormStartPosition.CenterScreen,
                     TopMost = true,
@@ -105,6 +121,7 @@ private void ShowWelcomeImage()
                     Location = new Point(10, 0)
                 };
                 
+             
           
                 
                 Button okButton = new Button
@@ -116,7 +133,7 @@ private void ShowWelcomeImage()
                 };
                 
                 form.Controls.Add(pictureBox);
-                
+             
                 form.Controls.Add(okButton);
                 form.AcceptButton = okButton;
                       Timer timer = new Timer

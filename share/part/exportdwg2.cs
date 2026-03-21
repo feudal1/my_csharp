@@ -51,7 +51,7 @@ namespace tools
                 dataAlignment[10] = 0.0;
                 dataAlignment[11] = 0.0;
                 int options; options = 97;
-Console.OutputEncoding = Encoding.UTF8;
+
                 Feature swFeature = (Feature)swModel.FirstFeature();
 
                

@@ -163,7 +163,7 @@ namespace tools
             if (swApp == null || swModel == null) return;
 
              var thickness = get_thickness.run(swModel);
-            exportdwg2.run(swModel, thickness.ToString());
+            exportdwg2_body.run(swModel);
         }
              [Command("drw2dwg", Description = "将工程图转换为 DWG 格式", Parameters = "无", Group = "solidworks")]
         static void Drw2DwgCommand(string[] args)
