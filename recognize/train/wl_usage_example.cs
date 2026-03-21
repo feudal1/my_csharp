@@ -37,8 +37,8 @@ namespace recognize.train_use
         public static void Example2_CompareTwoParts(ISldWorks swApp, ModelDoc2 part1, ModelDoc2 part2)
         {
             // 构建两个零件的图
-            PartGraph graph1 = FaceGraphBuilder.BuildGraph(part1, "零件 A");
-            PartGraph graph2 = FaceGraphBuilder.BuildGraph(part2, "零件 B");
+            PartGraph graph1 = FaceGraphBuilder.BuildGraph(part1);
+            PartGraph graph2 = FaceGraphBuilder.BuildGraph(part2);
             
             // 计算相似度
             double similarity = SimilarityCalculator.CalculatePairSimilarity(graph1, graph2, iterations: 3);

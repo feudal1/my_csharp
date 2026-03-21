@@ -55,7 +55,7 @@ namespace recognize.train_use
 
             // 执行 WL 迭代
             Console.WriteLine($"\n执行 WL 迭代...");
-            var freqList = WLGraphKernel.PerformWLIterations(graph, iterations: 3);
+            var freqList = WLGraphKernel.PerformWLIterations(graph, iterations: 1);
 
             // 显示每次迭代的标签频率
             for (int i = 0; i < freqList.Count; i++)
@@ -84,8 +84,8 @@ namespace recognize.train_use
             Console.WriteLine("\n========== 零件相似度对比 ==========\n");
 
             // 构建两个零件的图
-            PartGraph graph1 = FaceGraphBuilder.BuildGraph(model1, "零件 A");
-            PartGraph graph2 = FaceGraphBuilder.BuildGraph(model2, "零件 B");
+            PartGraph graph1 = FaceGraphBuilder.BuildGraph(model1);
+            PartGraph graph2 = FaceGraphBuilder.BuildGraph(model2);
 
             if (graph1 == null || graph2 == null)
             {
@@ -126,7 +126,7 @@ namespace recognize.train_use
             }
 
             // 运行完整分析
-            SimilarityCalculator.RunAnalysis(graphs, wlIterations: 3, decayFactor: 0.5);
+            SimilarityCalculator.RunAnalysis(graphs, wlIterations: 1, decayFactor: 0.5);
         }
     }
 }

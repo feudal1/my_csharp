@@ -4,7 +4,7 @@ using SolidWorks.Interop.swconst;
 
 namespace recognize
 {
-    class Program
+    class MAIN
     {
     [STAThread]
         static void Main(string[] args)

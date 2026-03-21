@@ -43,11 +43,11 @@ namespace tools
                     Console.WriteLine($"正在加载：{fileName}");
                     int errors = 0;
                     int warnings = 0;
-                    // 打开零件文档
+                    // 以只读方式打开零件文档，避免关闭时提示保存
                     ModelDoc2 model = swApp.OpenDoc6(
                         file, 
                         (int)swDocumentTypes_e.swDocPART, 
-                        (int)swOpenDocOptions_e.swOpenDocOptions_Silent, 
+                         (int)swOpenDocOptions_e.swOpenDocOptions_Silent, 
                         "", 
                         ref  errors, 
                         ref  warnings);
@@ -55,15 +55,16 @@ namespace tools
                     if (model != null)
                     {
                         // 构建图结构
-                        PartGraph graph = FaceGraphBuilder.BuildGraph(model, Path.GetFileName(file));
+                        PartGraph graph = FaceGraphBuilder.BuildGraph(model);
                         
                         if (graph != null && graph.Nodes.Count > 0)
                         {
                             graphs.Add(graph);
                         }
-
-                        // 关闭文档
-                        swApp.CloseDoc(model.GetTitle());
+                    
+                      model.Save2(true);
+                        // 关闭文档 (只读打开的文档不会提示保存)
+                       swApp.CloseDoc(model.GetTitle());
                     }
                     else
                     {
@@ -83,7 +84,7 @@ namespace tools
         /// <summary>
         /// 从当前已打开的零件中构建图列表
         /// </summary>
-        public static List<PartGraph> BuildGraphsFromOpenParts(ModelDoc2[] models, string[] names = null)
+        public static List<PartGraph> BuildGraphsFromOpenParts(ModelDoc2[] models)
         {
             var graphs = new List<PartGraph>();
             
@@ -91,11 +92,9 @@ namespace tools
             {
                 if (models[i] != null)
                 {
-                    string name = names != null && names.Length > i 
-                        ? names[i] 
-                        : models[i].GetTitle();
                     
-                    PartGraph graph = FaceGraphBuilder.BuildGraph(models[i], name);
+                    
+                    PartGraph graph = FaceGraphBuilder.BuildGraph(models[i]);
                     
                     if (graph != null && graph.Nodes.Count > 0)
                     {
@@ -110,7 +109,7 @@ namespace tools
         /// <summary>
         /// 计算单个零件对的相似度
         /// </summary>
-        public static double CalculatePairSimilarity(PartGraph graph1, PartGraph graph2, int iterations = 3)
+        public static double CalculatePairSimilarity(PartGraph graph1, PartGraph graph2, int iterations = 1)
         {
             Console.WriteLine($"\n计算零件对相似度:");
             Console.WriteLine($"  零件 1: {graph1.PartName} ({graph1.Nodes.Count} 个面)");
@@ -131,7 +130,7 @@ namespace tools
         /// <summary>
         /// 运行完整分析流程
         /// </summary>
-        public static void RunAnalysis(List<PartGraph> graphs, int wlIterations = 3, double decayFactor = 0.5)
+        public static void RunAnalysis(List<PartGraph> graphs, int wlIterations = 1, double decayFactor = 0.5)
         {
             if (graphs == null || graphs.Count < 2)
             {

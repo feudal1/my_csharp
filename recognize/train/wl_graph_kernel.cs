@@ -17,7 +17,7 @@ namespace tools
         /// <param name="graph">零件图</param>
         /// <param name="iterations">迭代次数</param>
         /// <returns>每次迭代后的标签频率列表</returns>
-        public static List<Dictionary<string, int>> PerformWLIterations(PartGraph graph, int iterations = 3)
+        public static List<Dictionary<string, int>> PerformWLIterations(PartGraph graph, int iterations = 1)
         {
             var labelFrequenciesPerIter = new List<Dictionary<string, int>>();
             
@@ -210,7 +210,7 @@ namespace tools
         /// </summary>
         public static double[,] ComputeSimilarityMatrix(
             List<PartGraph> graphs,
-            int wlIterations = 3,
+            int wlIterations = 1,
             double decayFactor = 0.5)
         {
             int n = graphs.Count;

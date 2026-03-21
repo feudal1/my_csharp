@@ -48,7 +48,7 @@ namespace tools
         /// <summary>
         /// 从零件文档构建面邻接图
         /// </summary>
-        public static PartGraph BuildGraph(ModelDoc2 swModel, string partName = "")
+        public static PartGraph BuildGraph(ModelDoc2 swModel)
         {
             if (swModel == null)
             {
@@ -58,7 +58,7 @@ namespace tools
 
             PartDoc partDoc = (PartDoc)swModel;
             PartGraph graph = new PartGraph();
-            graph.PartName = string.IsNullOrEmpty(partName) ? swModel.GetTitle() : partName;
+            graph.PartName = swModel.GetTitle() ;
 
             // 存储邻接关系的字典：面索引 -> 邻居面索引集合
             var adjacencyDict = new Dictionary<int, HashSet<int>>();
