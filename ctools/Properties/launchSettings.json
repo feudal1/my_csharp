@@ -38,6 +38,10 @@
     "folder2step": {
       "commandName": "Project",
       "commandLineArgs": "folder2step"
+    },
+    "plan1": {
+      "commandName": "Project",
+      "commandLineArgs": "plan1"
     }
   }
 }

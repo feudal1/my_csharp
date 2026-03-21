@@ -148,6 +148,9 @@ namespace recognize
                         }
                         break;
 
+            
+
+
                     case "help":
                     case "-h":
                     case "--help":
@@ -184,6 +187,11 @@ namespace recognize
             Console.WriteLine("  test               测试当前打开的零件 (WL 图核)");
             Console.WriteLine("  compare <文件 1> <文件 2>  比较两个零件的相似度");
             Console.WriteLine("  batch              批量分析文件夹中的所有零件 (弹窗选择文件夹)");
+            Console.WriteLine("\n装配体 WL 批量处理命令:");
+            Console.WriteLine("  asm-wl             基于装配体的 WL 批量处理 (构建所有零件的面邻接图)");
+            Console.WriteLine("  asm-wl-similar     计算装配体中所有零件的相似度矩阵");
+            Console.WriteLine("  asm-wl-example     运行基础使用示例");
+            Console.WriteLine("  asm-wl-advanced    运行高级示例 (多次迭代对比)");
             Console.WriteLine("\n示例:");
             Console.WriteLine("  recognize edges");
             Console.WriteLine("  recognize test");
