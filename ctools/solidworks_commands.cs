@@ -33,9 +33,22 @@ namespace tools
         {
             if (swApp == null || swModel == null) return;
 
-            asm2export.run(swApp, swModel);
+            asm2do.run(swApp, swModel, (model, app) => exportdwg2_body.run(model));
         }
+        [Command("asm2check", Description = "装配体批量检查展开", Parameters = "无", Group = "solidworks")]
+        static void Asm2check(string[] args)
+        {
+            if (swApp == null || swModel == null) return;
 
+            asm2do.run(swApp, swModel, (model, app) => checkk_factor.run(app,model));
+        }
+        [Command("asm2bom", Description = "装配体导出bom", Parameters = "无", Group = "solidworks")]
+        static void Asm2bom(string[] args)
+        {
+            if (swApp == null || swModel == null) return;
+
+            asm2do.run(swApp, swModel, (model, app) => asm2bom.run(app,model));
+        }
 
         [Command("asm2drw", Description = "装配体批量生成工程图", Parameters = "无", Group = "solidworks")]
         [Profiled(Description = "性能监控：装配体批量生成工程图")]

@@ -1,4 +1,4 @@
-using SolidWorks.Interop.sldworks;
+﻿using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using System;
 using System.IO;
@@ -6,16 +6,19 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Xml.Linq;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 namespace tools
 {
-    public class asm2export
+    public class asm2do
     {
         static private Dictionary<string, int> docnameCount = new Dictionary<string, int>();
         static private readonly object _swApiLock = new object();
 
-        static public string[]? run(SldWorks swApp, ModelDoc2 swModel)
+        public delegate void SolidWorksAction( ModelDoc2 swModel,SldWorks swApp=null);
+
+        static public string[]? run(SldWorks swApp, ModelDoc2 swModel, SolidWorksAction action)
         {
             try
             {
@@ -39,15 +42,15 @@ namespace tools
                 object[] topComponents = (object[])swAssembly.GetComponents(false);
 
                 Console.WriteLine($"正在扫描装配体... 共 {topComponents.Length} 个顶层组件");
-                int successcount = 0;
+
                 // 单线程顺序处理
                 foreach (object compObj in topComponents)
                 {
                     Component2 topComp = (Component2)compObj;
-                    TraverseComponent(swApp, topComp, ref successcount);
+                    TraverseComponent(swApp, topComp, action);
                 }
 
-                Console.WriteLine($"成功导出 {successcount} 个零件");
+
 
                 foreach (var kvp in docnameCount.OrderBy(x => x.Key))
                 {
@@ -68,7 +71,7 @@ namespace tools
         }
 
 // 递归遍历组件
-        static private void TraverseComponent(SldWorks swApp, Component2 component, ref int successcount)
+        static private void TraverseComponent(SldWorks swApp, Component2 component, SolidWorksAction action)
         {
             // 获取子组件
             object[] children = (object[])component.GetChildren();
@@ -78,7 +81,7 @@ namespace tools
                 foreach (object childObj in children)
                 {
                     Component2 childComp = (Component2)childObj;
-                    TraverseComponent(swApp, childComp, ref successcount);
+                    TraverseComponent(swApp, childComp, action);
                 }
             }
             else
@@ -110,27 +113,22 @@ namespace tools
                     if (docnameCount[docname] == 1)
                     {
 
+                        Debug.WriteLine($"正在处理 {docname}...");
+                        action.Invoke( doc,swApp);
 
-                        var success = exportdwg2_body.run(doc);
 
-                        successcount += success;
 
 
                     }
 
                     // 成功处理完后，关闭文档
                     swApp.CloseDoc(pathName);
+
+
+
                 }
-                else
-                {
-                    Console.WriteLine($"警告：无法获取组件 {component.Name2} 的文档对象。");
-                }
-
-
-
-
-
             }
         }
     }
 }
+

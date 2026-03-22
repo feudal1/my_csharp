@@ -47,6 +47,16 @@
       "commandName": "Project",
       "commandLineArgs": "new_drw"
       
+    },
+    "asm2check": 
+            {
+              "commandName": "Project",
+              "commandLineArgs": "asm2check"
+            },
+    
+    "asm2bom": {
+      "commandName": "Project",
+      "commandLineArgs": "asm2bom"
     }
   }
 }
