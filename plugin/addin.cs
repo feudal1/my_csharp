@@ -27,11 +27,42 @@ namespace SolidWorksAddinStudy
         private static ICommandManager? iCmdMgr;
         private static int addinCookieID;
         private static bool consoleOpened = false;
+        private static ConsoleOutputForm? consoleForm;
 
 
-        [DllImport("kernel32.dll")]
-        private static extern bool AttachConsole(int dwProcessId);
-        private const int ATTACH_PARENT_PROCESS = -1;
+        /// <summary>
+        /// 显示输出窗口
+        /// </summary>
+        public static void ShowOutputWindow()
+        {
+            if (consoleForm == null || consoleForm.IsDisposed)
+            {
+                consoleForm = new ConsoleOutputForm();
+                consoleForm.Show();
+                consoleForm.StartIntercept();
+            }
+            else
+            {
+                if (consoleForm.WindowState == FormWindowState.Minimized)
+                {
+                    consoleForm.WindowState = FormWindowState.Normal;
+                }
+                consoleForm.BringToFront();
+            }
+        }
+
+        /// <summary>
+        /// 关闭输出窗口
+        /// </summary>
+        public static void CloseOutputWindow()
+        {
+            if (consoleForm != null && !consoleForm.IsDisposed)
+            {
+                consoleForm.StopIntercept();
+                consoleForm.Close();
+                consoleForm = null;
+            }
+        }
 
         [DllImport("kernel32.dll")]
         private static extern bool AllocConsole();

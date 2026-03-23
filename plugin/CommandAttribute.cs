@@ -13,6 +13,7 @@ namespace SolidWorksAddinStudy
         public string Tooltip { get; set; }
         public string LocalizedName { get; set; }
         public int[] DocumentTypes { get; set; }
+        public bool ShowOutputWindow { get; set; } = false;
         
         public CommandAttribute(int id, string name, string tooltip, string localized_name, params int[] documentTypes)
         {

@@ -21,7 +21,7 @@ using System.Text;
     public partial class AddinStudy 
 {
   
-    [Command(1001, "导出展开", "装配体每个零件批量展开", "asm2export", (int)swDocumentTypes_e.swDocASSEMBLY)]
+    [Command(1001, "导出展开", "装配体每个零件批量展开", "asm2export", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void Asm2export()
     {
         try
@@ -53,7 +53,7 @@ using System.Text;
             swApp?.SendMsgToUser($"工程图转换失败：{ex.Message}");
         }
     }
-    [Command(1004, "导出展开", "导出展开", "exportdwg", (int)swDocumentTypes_e.swDocPART)]
+    [Command(1004, "导出展开", "导出展开", "exportdwg", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
     private void exportdwg()
     {
         try

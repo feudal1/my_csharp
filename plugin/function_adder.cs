@@ -49,7 +49,25 @@ using System.Linq;
             {
                 try
                 {
-                    method.Invoke(this, null);
+                    var cmdAttr = method.GetCustomAttribute<CommandAttribute>();
+                    
+                    // 如果设置了 ShowOutputWindow，则包装执行
+                    if (cmdAttr != null && cmdAttr.ShowOutputWindow)
+                    {
+                        try
+                        {
+                            ShowOutputWindow();
+                            method.Invoke(this, null);
+                        }
+                        finally
+                        {
+                            CloseOutputWindow();
+                        }
+                    }
+                    else
+                    {
+                        method.Invoke(this, null);
+                    }
                 }
                 catch (Exception ex)
                 {
