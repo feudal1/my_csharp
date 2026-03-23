@@ -21,6 +21,72 @@ using System.Text;
     public partial class AddinStudy 
 {
   
+    [Command(1001, "导出展开", "装配体每个零件批量展开", "asm2export", (int)swDocumentTypes_e.swDocASSEMBLY)]
+    private void Asm2export()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个工程图文档");
+                return;
+            }
+           
+            asm2do.run(swApp, swModel, (model, app) => exportdwg2_body.run(model));
+
+
+           
+         
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"工程图转换失败：{ex.Message}");
+            swApp?.SendMsgToUser($"工程图转换失败：{ex.Message}");
+        }
+    }
+    [Command(1004, "导出展开", "导出展开", "exportdwg", (int)swDocumentTypes_e.swDocPART)]
+    private void exportdwg()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个工程图文档");
+                return;
+            }
+            exportdwg2_body.run(swModel);
+
+
+
+
+
+
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"工程图转换失败：{ex.Message}");
+            swApp?.SendMsgToUser($"工程图转换失败：{ex.Message}");
+        }
+    }
+  
     [Command(1002, "工程图转 DWG", "将当前工程图转换为 DWG 格式并打开", "drw2dwg", (int)swDocumentTypes_e.swDocDRAWING)]
     private void Drw2Dwg()
     {

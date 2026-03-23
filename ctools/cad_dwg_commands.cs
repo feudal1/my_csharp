@@ -73,26 +73,7 @@ namespace tools
         [Command("folder2merge", Description = "批量合并文件夹内 DWG 文件（水平排列，间距 10）", Parameters ="无", Group = "cad")]
         static void Folder2MergeCommand(string[] args)
         {
-            var files = FolderPicker.GetFileNamesFromSelectedFolder();
-            if (files != null)
-            {
-                double currentX = 0.0;
-                double partSpacing = 10.0; // 零件之间的间距
-                
-                foreach (var file in files)
-                {
-                    Console.WriteLine($"准备插入文件：{System.IO.Path.GetFileName(file)}, 位置=({currentX:F2}, 0.00)");
-                    
-                    var maxPoint = merge_dwg.run(file, currentX, 0.0);
-                    
-                    if (maxPoint != null)
-                    {
-                        double partMaxX = maxPoint[0];
-                        currentX = partMaxX + partSpacing;
-                        Console.WriteLine($"已插入，下一个位置 startX={currentX:F2}");
-                    }
-                }
-            }
+            folder2merge.run();
         }
 
         [Command("folder_with_subfolders_draw_divider", Description = "遍历（子）文件夹：合并 DWG 并绘制边界框", Parameters = "无", Group = "cad")]

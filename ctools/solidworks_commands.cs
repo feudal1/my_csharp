@@ -17,7 +17,14 @@ namespace tools
             var dwgname = Exportdwg.run(swModel, thickness.ToString());
       
         }
+        [Command("get_select_type", Description = "导出当前零件展开为 DWG 文件", Parameters = "无", Group = "solidworks")]
+        static void Get_select_type(string[] args)
+        {
+            if (swApp == null || swModel == null) return;
 
+            get_select_type.run(SwModel);
+
+        }
         [Command("export_flat_view", Description = "导出钣金展开视图 dwg", Parameters = "无", Group = "solidworks")]
         static void ExportFlatViewCommand(string[] args)
         {
@@ -33,7 +40,9 @@ namespace tools
         {
             if (swApp == null || swModel == null) return;
 
-            asm2do.run(swApp, swModel, (model, app) => exportdwg2_body.run(model));
+            asm2do.run(swApp, swModel, (model, app) =>
+            {
+                checkk_factor.run(app, model);exportdwg2_body.run(model); });
         }
         [Command("asm2check", Description = "装配体批量检查展开", Parameters = "无", Group = "solidworks")]
         static void Asm2check(string[] args)
@@ -41,6 +50,13 @@ namespace tools
             if (swApp == null || swModel == null) return;
 
             asm2do.run(swApp, swModel, (model, app) => checkk_factor.run(app,model));
+        }
+        [Command("get_all_typename", Description = "获取所有零件名称", Parameters = "无", Group = "solidworks")]
+        static void GetAllTypename(string[] args)
+        {
+            if (swApp == null || swModel == null) return;
+
+            get_all_typename.run( swModel);
         }
         [Command("asm2bom", Description = "装配体导出bom", Parameters = "无", Group = "solidworks")]
         static void Asm2bom(string[] args)

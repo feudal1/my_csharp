@@ -28,6 +28,7 @@ namespace SolidWorksAddinStudy
         private static int addinCookieID;
         private static bool consoleOpened = false;
 
+
         [DllImport("kernel32.dll")]
         private static extern bool AttachConsole(int dwProcessId);
         private const int ATTACH_PARENT_PROCESS = -1;
@@ -67,9 +68,11 @@ namespace SolidWorksAddinStudy
             
             Debug.WriteLine("插件已加载...");
             
-            InitializeCommandRegistry();
+ 
             AddCommandMgr();
             ShowWelcomeImage();
+            
+            PopupMenuInitialize();
            
             return true;
         }
@@ -166,11 +169,9 @@ namespace SolidWorksAddinStudy
         public bool DisconnectFromSW()
         {
             Debug.WriteLine("插件已卸载");
-            // 插件卸载时释放控制台
-            if (consoleOpened)
-            {
-                FreeConsole();
-            }
+            
+        
+        
             return true;
         }
 

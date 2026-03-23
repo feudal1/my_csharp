@@ -26,7 +26,7 @@
       "commandLineArgs": "export2"
       
     },
-    "asmexport2": {
+    "asm2export": {
       "commandName": "Project",
       "commandLineArgs": "asm2export"
 
@@ -57,6 +57,14 @@
     "asm2bom": {
       "commandName": "Project",
       "commandLineArgs": "asm2bom"
+    },
+    " get_all_typename": {
+      "commandName": "Project",
+      "commandLineArgs": "get_all_typename"
+    },
+    "get_select_type": {
+      "commandName": "Project",
+      "commandLineArgs": "get_select_type"
     }
   }
 }

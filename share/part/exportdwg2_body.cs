@@ -4,6 +4,7 @@
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -25,36 +26,38 @@ namespace tools
                     string outputfile = "";
                     string thickness = "无";
                     object[] features = (object[])body.GetFeatures();
-                    foreach ( object objFeature in features)
-                    {
+                
                         
-                        Feature swFeature = (Feature)objFeature;
+                 
+                    Feature swFeature2 = (Feature)features[features.Length-1];
+                    
+                    if (swFeature2.GetTypeName2() == "FlatPattern")
+                    {
+                        Feature swFeature = (Feature)features[0];
                    
                         if (swFeature.GetTypeName2() == "SheetMetal")
-                    {
-                        SheetMetalFeatureData swSheetMetalData = (SheetMetalFeatureData)swFeature.GetDefinition();
-                        thickness =  Math.Round(swSheetMetalData.Thickness*1000,2).ToString();
-                         outputfile = directory + "\\"+"出图"+"\\" + "下料" + "\\" + thickness;
+                        {
+                            SheetMetalFeatureData swSheetMetalData = (SheetMetalFeatureData)swFeature.GetDefinition();
+                            thickness =  Math.Round(swSheetMetalData.Thickness*1000,2).ToString();
+                            outputfile = directory + "\\"+"出图"+"\\" + "下料" + "\\" + thickness;
+                    
+                        }
                         if (!Directory.Exists(outputfile))
                         {
                             Directory.CreateDirectory(outputfile);
                         }
-                    }
-
-                    if (swFeature.GetTypeName2() == "FlatPattern")
-                    {
-                         string dwgFileName = outputfile + "\\" +  partname+"_"+swFeature.Name + ".dwg";
-                        var swFlatPatt = (FlatPatternFeatureData)swFeature.GetDefinition();
-                         swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swUnSuppressFeature);
+                         string dwgFileName = outputfile + "\\" +  partname+"_"+body.Name + ".dwg";
+                        var swFlatPatt = (FlatPatternFeatureData)swFeature2.GetDefinition();
+                         swFeature2 .SetSuppression((int)swFeatureSuppressionAction_e.swUnSuppressFeature);
                          var fixface = (    Face2)swFlatPatt.FixedFace2;
                         var fixface_area=Math.Round( fixface.GetArea()*1000000,2);
                         
-                        var subfeat = (Feature)swFeature.GetFirstSubFeature();
+                        var subfeat = (Feature)swFeature2.GetFirstSubFeature();
                         bool hasbend=false;
                         while (subfeat != null)
                         {
 
-                            Console.WriteLine(subfeat.GetTypeName());
+                            Debug.WriteLine(subfeat.GetTypeName());
                             if (subfeat.GetTypeName() == "UiBend")
                             {
                                 hasbend=true;
@@ -87,11 +90,11 @@ namespace tools
                         var select_result=bigger_face_ent.Select4(true, null);
 
                         if (select_result)
-                        {Console.WriteLine($"选择面成功");
+                        {Debug.WriteLine($"选择面成功");
                         }
 
                         var success=swPart.ExportToDWG(dwgFileName, fullPath, (int)swExportToDWG_e.swExportToDWG_ExportSelectedFacesOrLoops, true, dataAlignment, false, false, options, null);
-swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);
+swFeature2 .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);
                         Console.WriteLine($"{success},导出{dwgFileName}");
                         if (success) { successcount++; }
 
@@ -100,7 +103,7 @@ swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);
                
                     }
                       
-                    }
+                   
                   
                  
                     
