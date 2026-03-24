@@ -41,7 +41,6 @@ namespace tools
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             
             RegisterCommands();
-            GenerateCommandsDescriptionFile();
             
             // 将 ctool 的命令注册到全局命令注册中心
             CommandRegistry.Instance.RegisterAssembly(typeof(Program).Assembly);
@@ -63,45 +62,8 @@ namespace tools
                 
                 // 创建 LLM 循环调用器，注入命令解析器和 SolidWorks 实例解析器
                 LlmLoopCaller loopCaller = new LlmLoopCaller(
-                    // 传入获取命令描述内容的委托（优先使用全局注册中心的命令）
-                    () => {
-                        try
-                        {
-                            // 从全局命令注册中心获取所有命令并生成描述
-                            var allCommands = CommandRegistry.Instance.GetAllCommands();
-                            var sb = new StringBuilder();
-                            sb.AppendLine("=== SolidWorks 自动化命令列表 ===");
-                            sb.AppendLine($"生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                            sb.AppendLine("\n***命令格式说明:***");
-                            sb.AppendLine("1. 无参数命令：直接输入 do_【命令名】");
-                            sb.AppendLine("2. 有参数命令：do_【命令名】参数值");
-                            sb.AppendLine("3. 执行前需用户确认 (y/n/auto)\n");
-                            
-                            foreach (var cmd in allCommands.Values.OrderBy(k => k.Name))
-                            {
-                                sb.AppendLine($"\n【{cmd.Group ?? "默认"}】{cmd.Name} {(cmd.CommandType == CommandType.Async ? "(异步)" : "")}");
-                                if (!string.IsNullOrEmpty(cmd.Description))
-                                {
-                                    sb.AppendLine($"    说明：{cmd.Description}");
-                                }
-                                
-                                if (string.IsNullOrEmpty(cmd.Parameters) || cmd.Parameters == "无")
-                                {
-                                    sb.AppendLine($"    参数：无");
-                                    sb.AppendLine($"    示例：do_【{cmd.Name}】");
-                                }
-                                else
-                                {
-                                    sb.AppendLine($"    参数：{cmd.Parameters}");
-                                    sb.AppendLine($"    示例：do_【{cmd.Name}】<参数值>");
-                                }
-                            }
-                            
-                            return sb.ToString();
-                        }
-                        catch { }
-                        return "";
-                    },
+                    // 传入获取命令描述内容的委托（实时生成）
+                    () => GetCommandsDescriptionContent(),
                     // 命令解析器：从全局注册中心查找命令
                     commandName => CommandRegistry.Instance.GetCommand(commandName),
                     // SolidWorks 实例解析器
@@ -200,59 +162,43 @@ namespace tools
         }
         
         /// <summary>
-        /// 生成命令描述文件供 AI 使用
+        /// 从全局命令注册中心获取命令描述内容（实时生成）
         /// </summary>
-        static void GenerateCommandsDescriptionFile()
+        static string GetCommandsDescriptionContent()
         {
-            try
+            var sb = new StringBuilder();
+            sb.AppendLine("=== SolidWorks 自动化命令列表 ===");
+            sb.AppendLine($"更新时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine("\n***命令格式说明:***");
+            sb.AppendLine("1. 无参数命令：直接输入 do_【命令名】");
+            sb.AppendLine("2. 有参数命令：do_【命令名】参数值");
+            sb.AppendLine("3. 执行前需用户确认 (y/n/auto)\n");
+            
+            if (commandInfos != null)
             {
-                string llmDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm");
-                if (!Directory.Exists(llmDir))
+                foreach (var cmd in commandInfos.Values.OrderBy(k => k.Name))
                 {
-                    Directory.CreateDirectory(llmDir);
-                }
-                
-                string commandsFile = Path.Combine(llmDir, "commands_description.txt");
-                
-                var sb = new StringBuilder();
-                sb.AppendLine("=== SolidWorks 自动化命令列表 ===");
-                sb.AppendLine($"生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                sb.AppendLine("\n***命令格式说明:***");
-                sb.AppendLine("1. 无参数命令：直接输入 do_【命令名】");
-                sb.AppendLine("2. 有参数命令：do_【命令名】参数值");
-                sb.AppendLine("3. 执行前需用户确认 (y/n/auto)\n");
-                
-                if (commandInfos != null)
-                {
-                    foreach (var cmd in commandInfos.Values.OrderBy(k => k.Name))
+                    sb.AppendLine($"\n【{cmd.Group ?? "默认"}】{cmd.Name} {(cmd.CommandType == CommandType.Async ? "(异步)" : "")}");
+                    if (!string.IsNullOrEmpty(cmd.Description))
                     {
-                        sb.AppendLine($"\n【{cmd.Group ?? "默认"}】{cmd.Name} {(cmd.CommandType == CommandType.Async ? "(异步)" : "")}");
-                        if (!string.IsNullOrEmpty(cmd.Description))
-                        {
-                            sb.AppendLine($"    说明：{cmd.Description}");
-                        }
-                        
-                        // 明确标识参数
-                        if (string.IsNullOrEmpty(cmd.Parameters) || cmd.Parameters == "无")
-                        {
-                            sb.AppendLine($"    参数：无");
-                            sb.AppendLine($"    示例：do_【{cmd.Name}】");
-                        }
-                        else
-                        {
-                            sb.AppendLine($"    参数：{cmd.Parameters}");
-                            sb.AppendLine($"    示例：do_【{cmd.Name}】<参数值>");
-                        }
+                        sb.AppendLine($"    说明：{cmd.Description}");
+                    }
+                    
+                    // 明确标识参数
+                    if (string.IsNullOrEmpty(cmd.Parameters) || cmd.Parameters == "无")
+                    {
+                        sb.AppendLine($"    参数：无");
+                        sb.AppendLine($"    示例：do_【{cmd.Name}】");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"    参数：{cmd.Parameters}");
+                        sb.AppendLine($"    示例：do_【{cmd.Name}】<参数值>");
                     }
                 }
-                
-                File.WriteAllText(commandsFile, sb.ToString(), Encoding.UTF8);
-                Console.WriteLine($"\n✓ 命令描述文件已生成：{commandsFile}");
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"\n生成命令描述文件失败：{ex.Message}");
-            }
+            
+            return sb.ToString();
         }
         
 

@@ -26,7 +26,6 @@ namespace tools
         private readonly string _shotMemoryFile;
         private readonly string _memoryDir;
         private readonly string _worksKnowledgeFile;
-        private readonly string _commandsDescriptionFile;
         private readonly Func<string>? _getCommandsDescriptionFunc;
 
         public LlmService(Func<string>? getCommandsDescriptionFunc = null)
@@ -46,7 +45,6 @@ namespace tools
             _shotMemoryFile = Path.Combine(llmDir, "shot_memory.json");
             _memoryDir = Path.Combine(llmDir, "memory_data");
             _worksKnowledgeFile = Path.Combine(llmDir, "works_knowledge.txt");
-            _commandsDescriptionFile = Path.Combine(llmDir, "commands_description.txt");
             _getCommandsDescriptionFunc = getCommandsDescriptionFunc;
             
             if (!Directory.Exists(_memoryDir))
@@ -119,7 +117,7 @@ namespace tools
         /// </summary>
         private string SearchCommands(string keyword, double threshold = 0.3, int? topK = null)
         {
-            // 如果提供了获取命令描述的委托，使用它来获取实时数据
+            // 使用委托获取实时命令描述
             if (_getCommandsDescriptionFunc != null)
             {
                 try
@@ -133,25 +131,11 @@ namespace tools
                 }
             }
             
-            // 否则从本地命令描述文件读取（备用方案）
-            try
-            {
-                if (File.Exists(_commandsDescriptionFile))
-                {
-                    var allContent = File.ReadAllText(_commandsDescriptionFile, Encoding.UTF8);
-                    return SearchInContent(allContent, keyword, threshold, topK);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"读取命令描述文件失败：{ex.Message}");
-            }
-            
             return $"未找到与 '{keyword}' 相关的命令";
         }
 
         /// <summary>
-        /// 在内容中搜索相关命令
+        /// 在内容中搜索相关命令（简化版：只使用模糊搜索）
         /// </summary>
         private string SearchInContent(string content, string keyword, double threshold, int? topK)
         {
@@ -161,34 +145,32 @@ namespace tools
             }
 
             var lines = content.Split('\n');
-            var matchedBlocks = new List<List<string>>();
+            var resultBlocks = new List<List<string>>();
             var currentBlock = new List<string>();
-            bool inMatchedBlock = false;
-            double currentScore = 0;
-
+            bool inBlock = false;
+            
             foreach (var line in lines)
             {
                 // 检测新命令开始（格式：【分组】命令名）
                 if (line.StartsWith("【") && line.Contains("】"))
                 {
                     // 保存上一个匹配的块
-                    if (inMatchedBlock && currentBlock.Count > 0 && currentScore >= threshold)
+                    if (inBlock && currentBlock.Count > 0)
                     {
-                        matchedBlocks.Add(new List<string>(currentBlock));
+                        resultBlocks.Add(new List<string>(currentBlock));
                     }
 
                     currentBlock.Clear();
                     currentBlock.Add(line);
-                    inMatchedBlock = false;
+                    inBlock = false;
 
-                    // 计算当前命令的相似度
-                    currentScore = CalculateLineSimilarity(keyword, line);
-                    if (currentScore >= threshold)
+                    // 检查命令名是否包含关键词
+                    if (line.ToLower().Contains(keyword.ToLower()))
                     {
-                        inMatchedBlock = true;
+                        inBlock = true;
                     }
                 }
-                else if (inMatchedBlock)
+                else if (inBlock)
                 {
                     // 如果在匹配的块中，继续收集后续行（说明、参数等）
                     if (line.StartsWith("    ") || string.IsNullOrWhiteSpace(line))
@@ -198,34 +180,54 @@ namespace tools
                     else
                     {
                         // 遇到非缩进的内容，块结束
-                        if (currentScore >= threshold)
+                        resultBlocks.Add(new List<string>(currentBlock));
+                        inBlock = false;
+                    }
+                }
+                else
+                {
+                    // 模糊搜索：检查是否包含关键词
+                    if (line.ToLower().Contains(keyword.ToLower()))
+                    {
+                        // 回溯找到这个命令块的开头
+                        int currentIndex = Array.IndexOf(lines, line);
+                        for (int i = currentIndex - 1; i >= 0; i--)
                         {
-                            matchedBlocks.Add(new List<string>(currentBlock));
+                            if (lines[i].StartsWith("【") && lines[i].Contains("】"))
+                            {
+                                // 从命令头开始重新收集
+                                for (int j = i; j <= currentIndex; j++)
+                                {
+                                    currentBlock.Add(lines[j]);
+                                }
+                                inBlock = true;
+                                break;
+                            }
                         }
-                        inMatchedBlock = false;
+                        
+                        // 如果没找到命令头，直接添加当前行（兼容其他格式）
+                        if (!inBlock)
+                        {
+                            currentBlock.Add(line);
+                            inBlock = true;
+                        }
                     }
                 }
             }
 
             // 处理最后一个块
-            if (inMatchedBlock && currentBlock.Count > 0 && currentScore >= threshold)
+            if (inBlock && currentBlock.Count > 0)
             {
-                matchedBlocks.Add(currentBlock);
+                resultBlocks.Add(currentBlock);
             }
 
-            if (matchedBlocks.Count == 0)
+            if (resultBlocks.Count == 0)
             {
-                // 如果没有精确匹配，尝试模糊搜索包含关键词的行
-                var fuzzyMatches = lines.Where(l => l.ToLower().Contains(keyword.ToLower())).ToList();
-                if (fuzzyMatches.Count > 0)
-                {
-                    return string.Join("\n", fuzzyMatches.Take(topK ?? fuzzyMatches.Count));
-                }
                 return $"未找到与 '{keyword}' 相关的命令";
             }
 
             // 合并所有匹配的块
-            var result = matchedBlocks.SelectMany(b => b);
+            var result = resultBlocks.SelectMany(b => b);
             if (topK.HasValue)
             {
                 result = result.Take(topK.Value);

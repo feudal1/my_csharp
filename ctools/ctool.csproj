@@ -8,6 +8,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
     <NoWarn>$(NoWarn);MSB3245</NoWarn>
+    <ApplicationIcon>favicon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,6 +32,13 @@
     <Reference Include="SolidWorks.Interop.swconst">
       <HintPath>..\reference\SolidWorks.Interop.swconst.dll</HintPath>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+
+    <None Update="favicon.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 
