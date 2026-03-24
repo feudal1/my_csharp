@@ -5,8 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace tools
 {
@@ -26,8 +27,9 @@ namespace tools
         private readonly string _memoryDir;
         private readonly string _worksKnowledgeFile;
         private readonly string _commandsDescriptionFile;
+        private readonly Func<string>? _getCommandsDescriptionFunc;
 
-        public LlmService()
+        public LlmService(Func<string>? getCommandsDescriptionFunc = null)
         {
             _httpClient = new HttpClient
             {
@@ -45,6 +47,7 @@ namespace tools
             _memoryDir = Path.Combine(llmDir, "memory_data");
             _worksKnowledgeFile = Path.Combine(llmDir, "works_knowledge.txt");
             _commandsDescriptionFile = Path.Combine(llmDir, "commands_description.txt");
+            _getCommandsDescriptionFunc = getCommandsDescriptionFunc;
             
             if (!Directory.Exists(_memoryDir))
             {
@@ -62,7 +65,7 @@ namespace tools
                 if (File.Exists(_shotMemoryFile))
                 {
                     var json = File.ReadAllText(_shotMemoryFile, Encoding.UTF8);
-                    var messages = JsonSerializer.Deserialize<List<ChatMessage>>(json) ?? new List<ChatMessage>();
+                    var messages = JsonConvert.DeserializeObject<List<ChatMessage>>(json) ?? new List<ChatMessage>();
                     return messages.Where(m => m.Role != "system").ToList();
                 }
             }
@@ -82,12 +85,7 @@ namespace tools
             try
             {
                 var filteredMessages = messages.Where(m => m.Role != "system").ToList();
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                };
-                var json = JsonSerializer.Serialize(filteredMessages, options);
+                var json = JsonConvert.SerializeObject(filteredMessages, Formatting.Indented);
                 File.WriteAllText(_shotMemoryFile, json, Encoding.UTF8);
             }
             catch (Exception ex)
@@ -117,44 +115,182 @@ namespace tools
         }
 
         /// <summary>
-        /// 执行 search 搜索并获取相关命令（使用 main.cs 中的现成方法）
+        /// 执行 search 搜索并获取相关命令（基于相似度匹配）
         /// </summary>
         private string SearchCommands(string keyword, double threshold = 0.3, int? topK = null)
         {
+            // 如果提供了获取命令描述的委托，使用它来获取实时数据
+            if (_getCommandsDescriptionFunc != null)
+            {
+                try
+                {
+                    string allContent = _getCommandsDescriptionFunc();
+                    return SearchInContent(allContent, keyword, threshold, topK);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"调用命令描述获取函数失败：{ex.Message}");
+                }
+            }
+            
+            // 否则从本地命令描述文件读取（备用方案）
             try
             {
-                // 通过反射调用 Program.SearchCommands 方法
-                var programType = typeof(Program);
-                var searchMethod = programType.GetMethod("SearchCommands", 
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-                
-                if (searchMethod == null)
+                if (File.Exists(_commandsDescriptionFile))
                 {
-                    Console.WriteLine("未找到 SearchCommands 方法");
-                    return "";
+                    var allContent = File.ReadAllText(_commandsDescriptionFile, Encoding.UTF8);
+                    return SearchInContent(allContent, keyword, threshold, topK);
                 }
-                
-                // 捕获控制台输出
-                var sbOutput = new StringBuilder();
-                var originalOut = Console.Out;
-                using (var writer = new StringWriter(sbOutput))
-                {
-                    Console.SetOut(writer);
-                    
-                    // 调用静态方法
-                    searchMethod.Invoke(null, [keyword, threshold, topK]);
-                    
-                    Console.SetOut(originalOut);
-                }
-                
-                // 返回捕获的输出
-                return sbOutput.ToString();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"搜索命令失败：{ex.Message}");
-                return "";
+                Console.WriteLine($"读取命令描述文件失败：{ex.Message}");
             }
+            
+            return $"未找到与 '{keyword}' 相关的命令";
+        }
+
+        /// <summary>
+        /// 在内容中搜索相关命令
+        /// </summary>
+        private string SearchInContent(string content, string keyword, double threshold, int? topK)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                return content;
+            }
+
+            var lines = content.Split('\n');
+            var matchedBlocks = new List<List<string>>();
+            var currentBlock = new List<string>();
+            bool inMatchedBlock = false;
+            double currentScore = 0;
+
+            foreach (var line in lines)
+            {
+                // 检测新命令开始（格式：【分组】命令名）
+                if (line.StartsWith("【") && line.Contains("】"))
+                {
+                    // 保存上一个匹配的块
+                    if (inMatchedBlock && currentBlock.Count > 0 && currentScore >= threshold)
+                    {
+                        matchedBlocks.Add(new List<string>(currentBlock));
+                    }
+
+                    currentBlock.Clear();
+                    currentBlock.Add(line);
+                    inMatchedBlock = false;
+
+                    // 计算当前命令的相似度
+                    currentScore = CalculateLineSimilarity(keyword, line);
+                    if (currentScore >= threshold)
+                    {
+                        inMatchedBlock = true;
+                    }
+                }
+                else if (inMatchedBlock)
+                {
+                    // 如果在匹配的块中，继续收集后续行（说明、参数等）
+                    if (line.StartsWith("    ") || string.IsNullOrWhiteSpace(line))
+                    {
+                        currentBlock.Add(line);
+                    }
+                    else
+                    {
+                        // 遇到非缩进的内容，块结束
+                        if (currentScore >= threshold)
+                        {
+                            matchedBlocks.Add(new List<string>(currentBlock));
+                        }
+                        inMatchedBlock = false;
+                    }
+                }
+            }
+
+            // 处理最后一个块
+            if (inMatchedBlock && currentBlock.Count > 0 && currentScore >= threshold)
+            {
+                matchedBlocks.Add(currentBlock);
+            }
+
+            if (matchedBlocks.Count == 0)
+            {
+                // 如果没有精确匹配，尝试模糊搜索包含关键词的行
+                var fuzzyMatches = lines.Where(l => l.ToLower().Contains(keyword.ToLower())).ToList();
+                if (fuzzyMatches.Count > 0)
+                {
+                    return string.Join("\n", fuzzyMatches.Take(topK ?? fuzzyMatches.Count));
+                }
+                return $"未找到与 '{keyword}' 相关的命令";
+            }
+
+            // 合并所有匹配的块
+            var result = matchedBlocks.SelectMany(b => b);
+            if (topK.HasValue)
+            {
+                result = result.Take(topK.Value);
+            }
+
+            return string.Join("\n", result);
+        }
+
+        /// <summary>
+        /// 计算单行的相似度
+        /// </summary>
+        private double CalculateLineSimilarity(string keyword, string line)
+        {
+            if (string.IsNullOrEmpty(keyword) || string.IsNullOrEmpty(line))
+            {
+                return 0.0;
+            }
+
+            string keywordLower = keyword.ToLower();
+            string lineLower = line.ToLower();
+
+            // 直接包含关键词则返回高分
+            if (lineLower.Contains(keywordLower))
+            {
+                return 0.8;
+            }
+
+            // 否则计算编辑距离相似度
+            return CalculateLevenshteinRatioSimple(keywordLower, lineLower);
+        }
+
+        /// <summary>
+        /// 简化的 Levenshtein 距离比率计算
+        /// </summary>
+        private double CalculateLevenshteinRatioSimple(string s1, string s2)
+        {
+            if (string.IsNullOrEmpty(s1)) return string.IsNullOrEmpty(s2) ? 1.0 : 0.0;
+            if (string.IsNullOrEmpty(s2)) return 0.0;
+
+            int[,] matrix = new int[s1.Length + 1, s2.Length + 1];
+
+            for (int i = 0; i <= s1.Length; i++)
+                matrix[i, 0] = i;
+
+            for (int j = 0; j <= s2.Length; j++)
+                matrix[0, j] = j;
+
+            for (int i = 1; i <= s1.Length; i++)
+            {
+                for (int j = 1; j <= s2.Length; j++)
+                {
+                    int cost = (s1[i - 1] == s2[j - 1]) ? 0 : 1;
+                    matrix[i, j] = Math.Min(
+                        Math.Min(
+                            matrix[i - 1, j] + 1,
+                            matrix[i, j - 1] + 1
+                        ),
+                        matrix[i - 1, j - 1] + cost
+                    );
+                }
+            }
+
+            int distance = matrix[s1.Length, s2.Length];
+            int maxLen = Math.Max(s1.Length, s2.Length);
+            return maxLen > 0 ? 1.0 - (distance / (double)maxLen) : 1.0;
         }
 
         /// <summary>
@@ -275,27 +411,94 @@ namespace tools
 
             try
             {
-                string jsonBody = JsonSerializer.Serialize(requestBodyObj);
+                string jsonBody = JsonConvert.SerializeObject(requestBodyObj);
                 using var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
                 
+                Console.WriteLine($"\n[调试] 请求体 JSON 长度：{jsonBody.Length} 字符");
+                Console.WriteLine($"[调试] HttpClient 状态：{(_httpClient != null ? "已初始化" : "未初始化")}");
+                Console.WriteLine($"[调试] HttpClient Timeout: {_httpClient?.Timeout.TotalSeconds} 秒");
+                
                 // 设置 Header
-                _httpClient.DefaultRequestHeaders.Clear();
-                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+                _httpClient!.DefaultRequestHeaders.Clear();
+                _httpClient!.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+                
+                Console.WriteLine($"[调试] Authorization Header 已设置");
 
                 // 发送请求
-                var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl)
+                var request = new HttpRequestMessage
                 {
+                    Method = HttpMethod.Post,
+                    RequestUri = new Uri(ApiUrl),
                     Content = content
                 };
-                using var response = await _httpClient.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead
-                );
+                
+                Console.WriteLine($"\n[调试] 正在发送请求到：{ApiUrl}");
+                Console.WriteLine($"[调试] 请求方法：{request.Method}");
+                Console.WriteLine($"[调试] API Key 前缀：{apiKey.Substring(0, Math.Min(10, apiKey.Length))}...");
+                
+                HttpResponseMessage? response = null;
+                try
+                {
+                    Console.WriteLine($"[调试] 即将调用 SendAsync...");
+                    response = await _httpClient.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead
+                    );
+                    Console.WriteLine($"[调试] SendAsync 返回，response 为 {(response == null ? "null" : "非 null")}");
+                    
+                    if (response != null)
+                    {
+                        Console.WriteLine($"[调试] 响应状态码：{response.StatusCode}");
+                        Console.WriteLine($"[调试] 响应是否成功：{response.IsSuccessStatusCode}");
+                    }
+                }
+                catch (HttpRequestException httpEx)
+                {
+                    Console.WriteLine($"\n[严重错误] HTTP 请求异常：{httpEx.Message}");
+                    Console.WriteLine($"[调试] 异常类型：{httpEx.GetType().FullName}");
+                    if (httpEx.InnerException != null)
+                    {
+                        Console.WriteLine($"[调试] 内部异常：{httpEx.InnerException.Message}");
+                        Console.WriteLine($"[调试] 内部异常类型：{httpEx.InnerException.GetType().FullName}");
+                    }
+                    throw;
+                }
+                catch (TaskCanceledException cancelEx)
+                {
+                    Console.WriteLine($"\n[严重错误] 请求被取消或超时：{cancelEx.Message}");
+                    Console.WriteLine($"[调试] 是否因超时取消：{cancelEx.InnerException is TimeoutException}");
+                    throw;
+                }
+                catch (Exception sendEx)
+                {
+                    Console.WriteLine($"\n[严重错误] 发送请求时出错：{sendEx.Message}");
+                    Console.WriteLine($"[调试] 异常类型：{sendEx.GetType().FullName}");
+                    if (sendEx.InnerException != null)
+                    {
+                        Console.WriteLine($"[调试] 内部异常：{sendEx.InnerException.Message}");
+                        Console.WriteLine($"[调试] 内部异常类型：{sendEx.InnerException.GetType().FullName}");
+                    }
+                    throw;
+                }
                 
                 // 处理非 200 状态码
+                if (response == null)
+                {
+                    throw new HttpRequestException("API 请求失败：响应为 null");
+                }
+                
                 if (!response.IsSuccessStatusCode)
                 {
-                    string errorBody = await response.Content.ReadAsStringAsync();
+                    string errorBody;
+                    try
+                    {
+                        errorBody = await response.Content.ReadAsStringAsync();
+                    }
+                    catch (Exception readEx)
+                    {
+                        errorBody = $"无法读取错误内容：{readEx.Message}";
+                    }
+                    Console.WriteLine($"\n[严重错误] API 请求失败 ({response.StatusCode}): {errorBody}");
                     throw new HttpRequestException($"API 请求失败 ({response.StatusCode}): {errorBody}");
                 }
 
@@ -331,22 +534,23 @@ namespace tools
 
                                 try
                                 {
-                                    using var doc = JsonDocument.Parse(dataJson);
-                                    var root = doc.RootElement;
+                                    var jObject = JObject.Parse(dataJson);
+                                    var root = jObject;
 
-                                    if (root.TryGetProperty("error", out var errorElem))
+                                    var errorToken = root["error"];
+                                    if (errorToken != null && errorToken["message"] != null)
                                     {
-                                        string errMsg = errorElem.GetProperty("message").GetString() ?? "未知错误";
+                                        string errMsg = errorToken["message"]!.ToString();
                                         throw new Exception($"流式传输中发生错误：{errMsg}");
                                     }
 
-                                    if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+                                    if (root["choices"] is JArray choices && choices.Count > 0)
                                     {
-                                        var choice = choices[0];
-                                        if (choice.TryGetProperty("delta", out var delta) && 
-                                            delta.TryGetProperty("content", out var contentElem))
+                                        var choiceToken = choices[0];
+                                        var contentToken = choiceToken?["delta"]?["content"];
+                                        if (contentToken != null)
                                         {
-                                            string? chunk = contentElem.GetString();
+                                            string chunk = contentToken.ToString();
                                             if (!string.IsNullOrEmpty(chunk))
                                             {
                                                 fullResponse.Append(chunk);
@@ -407,9 +611,15 @@ EndStream:
         /// <summary>
         /// 执行流式调用（带图像 VLM）
         /// </summary>
-        public async Task<string> CallStreamingWithImageAsync(List<ChatMessage> messages, string userPrompt, string imagePath, string apiKey, string? model = null)
+        public async Task<string> CallStreamingWithImageAsync(List<ChatMessage> messages, string userPrompt, string? imagePath, string apiKey, string? model = null)
         {
             model ??= DefaultModel;
+            
+            // 如果 imagePath 为 null 或空，直接返回
+            if (string.IsNullOrEmpty(imagePath))
+            {
+                throw new ArgumentException("imagePath 不能为空", nameof(imagePath));
+            }
             
             // 准备图片数据
             string ext = Path.GetExtension(imagePath).ToLower();

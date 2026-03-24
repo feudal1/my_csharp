@@ -4,13 +4,13 @@ using System.Runtime.InteropServices;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
-using cad_tools;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Linq;
 using System.Text.Json;
 using System.Diagnostics;
 using System.Text;
+using tools;
 
 namespace tools
 {
@@ -21,12 +21,6 @@ namespace tools
         public string? Description { get; set; }
     }
     
-    // 命令类型枚举 (公开)
-    public enum CommandType
-    {
-        Sync,      // 同步命令
-        Async      // 异步命令
-    }
     public partial class Program
     {
         static Dictionary<string, Func<string[], Task>>? asyncCommands;
@@ -37,17 +31,6 @@ namespace tools
         public static Dictionary<string, CommandInfo>? Commands => commandInfos;
         public static SldWorks? SwApp => swApp;
         public static ModelDoc2? SwModel => swModel;
-        
-        // 命令信息类 (公开)
-        public class CommandInfo
-        {
-          public string Name { get; set; } = "";
-          public string? Description { get; set; }
-          public string? Parameters { get; set; }
-          public string? Group { get; set; }  // 命令所属组
-          public Func<string[], Task> AsyncAction { get; set; } = null!;
-          public CommandType CommandType { get; set; } = CommandType.Sync;  // 命令类型标记
-        }
         
         static Dictionary<string, CommandInfo>? commandInfos;
         
@@ -60,11 +43,72 @@ namespace tools
             RegisterCommands();
             GenerateCommandsDescriptionFile();
             
+            // 将 ctool 的命令注册到全局命令注册中心
+            CommandRegistry.Instance.RegisterAssembly(typeof(Program).Assembly);
+            
             if (args.Length==0)
             {
-                LlmLoopCaller  loopCaller= new LlmLoopCaller();
+                // 连接 SolidWorks
+                swApp = Connect.run();
+                if (swApp == null)
+                {
+                    Console.WriteLine("错误：无法连接到 SolidWorks 应用程序。");
+                    return;
+                }
+                
+                swModel = (ModelDoc2)swApp.ActiveDoc;
+                
+                // 初始化全局 SolidWorks 上下文
+                SwContext.Instance.Initialize(swApp, swModel);
+                
+                // 创建 LLM 循环调用器，注入命令解析器和 SolidWorks 实例解析器
+                LlmLoopCaller loopCaller = new LlmLoopCaller(
+                    // 传入获取命令描述内容的委托（优先使用全局注册中心的命令）
+                    () => {
+                        try
+                        {
+                            // 从全局命令注册中心获取所有命令并生成描述
+                            var allCommands = CommandRegistry.Instance.GetAllCommands();
+                            var sb = new StringBuilder();
+                            sb.AppendLine("=== SolidWorks 自动化命令列表 ===");
+                            sb.AppendLine($"生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                            sb.AppendLine("\n***命令格式说明:***");
+                            sb.AppendLine("1. 无参数命令：直接输入 do_【命令名】");
+                            sb.AppendLine("2. 有参数命令：do_【命令名】参数值");
+                            sb.AppendLine("3. 执行前需用户确认 (y/n/auto)\n");
+                            
+                            foreach (var cmd in allCommands.Values.OrderBy(k => k.Name))
+                            {
+                                sb.AppendLine($"\n【{cmd.Group ?? "默认"}】{cmd.Name} {(cmd.CommandType == CommandType.Async ? "(异步)" : "")}");
+                                if (!string.IsNullOrEmpty(cmd.Description))
+                                {
+                                    sb.AppendLine($"    说明：{cmd.Description}");
+                                }
+                                
+                                if (string.IsNullOrEmpty(cmd.Parameters) || cmd.Parameters == "无")
+                                {
+                                    sb.AppendLine($"    参数：无");
+                                    sb.AppendLine($"    示例：do_【{cmd.Name}】");
+                                }
+                                else
+                                {
+                                    sb.AppendLine($"    参数：{cmd.Parameters}");
+                                    sb.AppendLine($"    示例：do_【{cmd.Name}】<参数值>");
+                                }
+                            }
+                            
+                            return sb.ToString();
+                        }
+                        catch { }
+                        return "";
+                    },
+                    // 命令解析器：从全局注册中心查找命令
+                    commandName => CommandRegistry.Instance.GetCommand(commandName),
+                    // SolidWorks 实例解析器
+                    () => swApp
+                );
            
-                var task = Task.Run(() =>      loopCaller.InteractiveLoopAsync());
+                var task = Task.Run(() => loopCaller.InteractiveLoopAsync());
                 task.GetAwaiter().GetResult();
             }
 
@@ -73,7 +117,64 @@ namespace tools
             {
                 string command = args[0];
                 
-             
+                // 支持通过命令行直接执行命令
+                if (command != "--search" && command != "search" && command != "s")
+                {
+                    // 连接 SolidWorks
+                    swApp = Connect.run();
+                    if (swApp == null)
+                    {
+                        Console.WriteLine("错误：无法连接到 SolidWorks 应用程序。");
+                        ShowHelp();
+                        return;
+                    }
+
+                    swModel = (ModelDoc2)swApp.ActiveDoc;
+                    
+                    // 初始化全局 SolidWorks 上下文
+                    SwContext.Instance.Initialize(swApp, swModel);
+                    
+                    // 尝试从全局注册中心查找并执行命令
+                    var cmdInfo = CommandRegistry.Instance.GetCommand(command);
+                    if (cmdInfo != null)
+                    {
+                        Console.WriteLine($">>> 正在执行命令：{command}...\n");
+                        try
+                        {
+                            cmdInfo.ExecuteAsync(args).GetAwaiter().GetResult();
+                            Console.WriteLine("\n>>> 命令执行结束。");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"\n❌ 命令执行失败：{ex.Message}");
+                        }
+                    }
+                    else if (asyncCommands != null && asyncCommands.ContainsKey(command))
+                    {
+                        Console.WriteLine($">>> 正在执行命令：{command}...\n");
+                        
+                        // 根据命令类型选择执行方式
+                        var localCmdInfo = commandInfos![command];
+                        
+                        if (localCmdInfo.CommandType == CommandType.Async)
+                        {
+                            var task = Task.Run(() => asyncCommands[command](args));
+                            task.GetAwaiter().GetResult();
+                        }
+                        else
+                        {
+                            asyncCommands[command](args).GetAwaiter().GetResult();
+                        }
+                        
+                        Console.WriteLine("\n>>> 命令执行结束。");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"没这命令：{command}");
+                        ShowHelp();
+                    }
+                    return;
+                }
                 
                 if (command == "--search" || command == "search" || command == "s")
                 {
@@ -93,51 +194,6 @@ namespace tools
                     
                     SearchCommands(keyword, threshold, topK);
                     return;
-                }
-            }
-
-            // 其余命令才需要连接 SolidWorks
-            swApp = Connect.run();
-            if (swApp == null)
-            {
-                Console.WriteLine("错误：无法连接到 SolidWorks 应用程序。");
-                ShowHelp();
-                return;
-            }
-
-            swModel = (ModelDoc2)swApp.ActiveDoc;
-
-            if (args.Length > 0)
-            {
-                string command = args[0];
-
-                if (asyncCommands != null && asyncCommands.ContainsKey(command))
-                {
-                    Console.WriteLine($">>> 正在执行命令：{command}...\n");
-                    
-                    // 根据命令类型选择执行方式
-                    var cmdInfo = commandInfos![command];
-                    
-                    if (cmdInfo.CommandType == CommandType.Async)
-                    {
-                        // 异步命令：在新线程上运行，避免阻塞控制台输出
-                        // 使用 Task.Run 启动异步任务，然后在当前线程等待
-                        // 这样 Console.Out.Flush() 可以正常工作
-                        var task = Task.Run(() => asyncCommands[command](args));
-                        task.GetAwaiter().GetResult();
-                    }
-                    else
-                    {
-                        // 同步命令：直接调用
-                        asyncCommands[command](args).GetAwaiter().GetResult();
-                    }
-                    
-                    Console.WriteLine("\n>>> 命令执行结束。");
-                }
-                else
-                {
-                    Console.WriteLine($"没这命令：{command}");
-                    ShowHelp();
                 }
             }
     

@@ -2,14 +2,25 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Text;
+using SolidWorks.Interop.sldworks;
 
 namespace tools
 {
     /// <summary>
-    /// 命令执行器 - 用于解析和执行 main.cs 中注册的命令
+    /// 命令执行器 - 用于解析和执行命令
     /// </summary>
     public class CommandExecutor
     {
+        private readonly Func<string, CommandInfo?> _commandResolver;
+        private readonly Func<SldWorks?> _swAppResolver;
+        
+        public CommandExecutor(
+            Func<string, CommandInfo?> commandResolver,
+            Func<SldWorks?> swAppResolver)
+        {
+            _commandResolver = commandResolver;
+            _swAppResolver = swAppResolver;
+        }
         /// <summary>
         /// 解析并执行命令
         /// </summary>
@@ -56,24 +67,25 @@ namespace tools
                         return "错误：无法解析命令";
                     }
                     commandName = parts[0];
-                    args = parts.Length > 1 ? parts[1..] : new string[0];
+                    args = parts.Length > 1 ? parts.Skip(1).ToArray() : new string[0];
                 }
 
                 // 检查命令是否存在
-                if (Program.Commands == null || !Program.Commands.ContainsKey(commandName))
+                var commandInfo = _commandResolver(commandName);
+                if (commandInfo == null)
                 {
                     return $"错误：未找到命令 '{commandName}'。请使用 search 命令查看可用命令。";
                 }
 
                 // 检查是否连接到 SolidWorks
-                if (Program.SwApp == null)
+                var swApp = _swAppResolver();
+                if (swApp == null)
                 {
                     return "错误：未连接到 SolidWorks，请先启动程序";
                 }
 
                 // 执行命令
-                var commandInfo = Program.Commands[commandName];
-                await commandInfo.AsyncAction(args);
+                await commandInfo!.AsyncAction(args);
 
                 return $"命令 '{commandName}' 执行成功";
             }
@@ -81,34 +93,6 @@ namespace tools
             {
                 return $"执行命令失败：{ex.Message}";
             }
-        }
-
-        /// <summary>
-        /// 获取所有可用命令的描述
-        /// </summary>
-        /// <returns>命令描述文本</returns>
-        public static string GetAllCommandsDescription()
-        {
-            if (Program.Commands == null || Program.Commands.Count == 0)
-            {
-                return "暂无可用命令";
-            }
-
-            var sb = new StringBuilder();
-            foreach (var cmd in Program.Commands.Values)
-            {
-                sb.AppendLine($"\n【{cmd.Group ?? "默认"}】{cmd.Name} {(cmd.CommandType == CommandType.Async ? "(异步)" : "")}");
-                if (!string.IsNullOrEmpty(cmd.Description))
-                {
-                    sb.AppendLine($"    说明：{cmd.Description}");
-                }
-                if (!string.IsNullOrEmpty(cmd.Parameters))
-                {
-                    sb.AppendLine($"    参数：{cmd.Parameters}");
-                }
-            }
-
-            return sb.ToString();
         }
     }
 }

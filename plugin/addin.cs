@@ -12,6 +12,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.Reflection;
 using System.Text;
+
 namespace SolidWorksAddinStudy
 {
     [Guid("D9C5D3A4-3B9F-4ACF-BC19-6D77D39C47CD"), ComVisible(true)]
@@ -101,6 +102,14 @@ namespace SolidWorksAddinStudy
             
             Debug.WriteLine("插件已加载...");
             
+            // 初始化全局 SolidWorks 上下文
+            var swModel = (ModelDoc2)swApp.ActiveDoc;
+   
+            
+            // 初始化命令注册表
+            InitializeCommandRegistry();
+            
+
  
             AddCommandMgr();
             ShowWelcomeImage();

@@ -15,12 +15,17 @@ using System.Reflection;
 using System.Threading.Tasks;
 using System.Text;
 
+using System.Linq;
+
    namespace SolidWorksAddinStudy
 {
    
     public partial class AddinStudy 
 {
   
+ 
+
+
     [Command(1001, "导出展开", "装配体每个零件批量展开", "asm2export", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void Asm2export()
     {
