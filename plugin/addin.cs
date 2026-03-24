@@ -38,6 +38,7 @@ namespace SolidWorksAddinStudy
             if (consoleForm == null || consoleForm.IsDisposed)
             {
                 consoleForm = new ConsoleOutputForm();
+                consoleForm.TopMost = true;  // 设置窗口置顶
                 consoleForm.Show();
                 consoleForm.StartIntercept();
             }
@@ -47,6 +48,7 @@ namespace SolidWorksAddinStudy
                 {
                     consoleForm.WindowState = FormWindowState.Normal;
                 }
+                consoleForm.TopMost = true;  // 确保窗口置顶
                 consoleForm.BringToFront();
             }
         }

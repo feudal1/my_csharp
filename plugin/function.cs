@@ -41,7 +41,9 @@ using System.Text;
                 return;
             }
            
-            asm2do.run(swApp, swModel, (model, app) => exportdwg2_body.run(model));
+            asm2do.run(swApp, swModel, (model, app) => {
+                return exportdwg2_body.run(model);
+            });
 
 
            

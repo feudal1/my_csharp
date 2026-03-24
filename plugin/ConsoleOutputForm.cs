@@ -9,7 +9,6 @@ namespace SolidWorksAddinStudy
     public class ConsoleOutputForm : Form
     {
         private TextBox outputTextBox;
-        private StringBuilder buffer = new StringBuilder();
         private TextWriter? originalOut;
         
         public ConsoleOutputForm()
@@ -60,8 +59,7 @@ namespace SolidWorksAddinStudy
                 return;
             }
 
-            buffer.Append(text);
-            outputTextBox.Text = buffer.ToString();
+            outputTextBox.AppendText(text);
             outputTextBox.SelectionStart = outputTextBox.Text.Length;
             outputTextBox.ScrollToCaret();
         }

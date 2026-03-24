@@ -42,14 +42,19 @@ namespace tools
 
             asm2do.run(swApp, swModel, (model, app) =>
             {
-                checkk_factor.run(app, model);exportdwg2_body.run(model); });
+                checkk_factor.run(app, model);
+                return exportdwg2_body.run(model);
+            });
         }
         [Command("asm2check", Description = "装配体批量检查展开", Parameters = "无", Group = "solidworks")]
         static void Asm2check(string[] args)
         {
             if (swApp == null || swModel == null) return;
 
-            asm2do.run(swApp, swModel, (model, app) => checkk_factor.run(app,model));
+            asm2do.run(swApp, swModel, (model, app) => {
+                checkk_factor.run(app,model);
+                return 0;
+            });
         }
         [Command("get_all_typename", Description = "获取所有零件名称", Parameters = "无", Group = "solidworks")]
         static void GetAllTypename(string[] args)
@@ -63,7 +68,10 @@ namespace tools
         {
             if (swApp == null || swModel == null) return;
 
-            asm2do.run(swApp, swModel, (model, app) => asm2bom.run(app,model));
+            asm2do.run(swApp, swModel, (model, app) => {
+                asm2bom.run(app,model);
+                return 0;
+            });
         }
 
         [Command("asm2drw", Description = "装配体批量生成工程图", Parameters = "无", Group = "solidworks")]

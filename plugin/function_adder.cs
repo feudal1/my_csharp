@@ -54,15 +54,8 @@ using System.Linq;
                     // 如果设置了 ShowOutputWindow，则包装执行
                     if (cmdAttr != null && cmdAttr.ShowOutputWindow)
                     {
-                        try
-                        {
-                            ShowOutputWindow();
-                            method.Invoke(this, null);
-                        }
-                        finally
-                        {
-                            CloseOutputWindow();
-                        }
+                        ShowOutputWindow();
+                        method.Invoke(this, null);
                     }
                     else
                     {

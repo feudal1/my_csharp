@@ -67,7 +67,7 @@ public class checkk_factor
     }
 
 
-    static public void run(SldWorks swApp, ModelDoc2 swModel)
+    static public int run(SldWorks swApp, ModelDoc2 swModel)
     {
         var partdoc = (PartDoc)swModel;
         var bodys = (object[])partdoc.GetBodies2((int)swBodyType_e.swSolidBody, false);
@@ -117,5 +117,6 @@ public class checkk_factor
 
             }
         }
+        return 0;
     }
 }

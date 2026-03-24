@@ -14,10 +14,12 @@ namespace SolidWorksAddinStudy
   public partial class AddinStudy 
 {
 
-              public string ShowBodyInfo()
+              public string open_dwg()
               {
+                  ShowOutputWindow();
                   var swModel = (ModelDoc2)swApp.ActiveDoc;
                   get_select_type.run(swModel);
+                  
             return "a";
 
     }            
@@ -37,8 +39,8 @@ namespace SolidWorksAddinStudy
                 }
 
                 
-                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID,	(int)swSelectType_e.swSelFACES,"打开dwg", "ShowBodyInfo", "","打开dwg","a");
-                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID,	(int)swSelectType_e.swSelFACES,"打开dwg", "ShowBodyInfo", "","打开dwg","a");
+                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID,	(int)swSelectType_e.swSelFACES,"open_dwg", "open_dwg", "","","");
+                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID,	(int)swSelectType_e.swSelFACES,"open_dwg", "open_dwg", "","","");
                  
               
             }

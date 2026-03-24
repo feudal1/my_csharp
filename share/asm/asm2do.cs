@@ -1,4 +1,4 @@
-﻿using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using System;
 using System.IO;
@@ -14,14 +14,18 @@ namespace tools
     public class asm2do
     {
         static private Dictionary<string, int> docnameCount = new Dictionary<string, int>();
+        static private Dictionary<string, int> dwgExportCount = new Dictionary<string, int>();
         static private readonly object _swApiLock = new object();
 
-        public delegate void SolidWorksAction( ModelDoc2 swModel,SldWorks swApp=null);
+        public delegate int SolidWorksAction( ModelDoc2 swModel,SldWorks swApp=null);
 
         static public string[]? run(SldWorks swApp, ModelDoc2 swModel, SolidWorksAction action)
         {
             try
             {
+                // 清空上次的统计结果
+                docnameCount.Clear();
+                dwgExportCount.Clear();
 
                 if (swModel == null)
                 {
@@ -39,23 +43,31 @@ namespace tools
                 AssemblyDoc swAssembly = (AssemblyDoc)swModel;
 
                 // 获取顶层组件
-                object[] topComponents = (object[])swAssembly.GetComponents(false);
+                object[] topComponents = (object[])swAssembly.GetComponents(true);
 
                 Console.WriteLine($"正在扫描装配体... 共 {topComponents.Length} 个顶层组件");
 
                 // 单线程顺序处理
                 foreach (object compObj in topComponents)
                 {
+                   
                     Component2 topComp = (Component2)compObj;
+                    Console.WriteLine($"正在处理 {topComp.Name2}...");
                     TraverseComponent(swApp, topComp, action);
                 }
 
 
 
+                Console.WriteLine("\n========== 零件统计信息 ==========");
                 foreach (var kvp in docnameCount.OrderBy(x => x.Key))
                 {
-                    Console.WriteLine($"{kvp.Key}: {kvp.Value} 次");
+                    string partName = Path.GetFileName(kvp.Key);
+                    int refCount = kvp.Value;
+                    int dwgCount = dwgExportCount.ContainsKey(kvp.Key) ? dwgExportCount[kvp.Key] : 0;
+                    Console.WriteLine($"{partName}: 引用 {refCount} 次，导出 {dwgCount} 个 DWG");
                 }
+                Console.WriteLine($"\n总计：{docnameCount.Count} 个零件，共导出 {dwgExportCount.Values.Sum()} 个 DWG 文件");
+                Console.WriteLine("====================================\n");
 
                 List<string> result = new List<string>(docnameCount.Keys);
                 return result.ToArray();
@@ -109,12 +121,19 @@ namespace tools
 
                     docnameCount[docname]++;
 
+                    // 初始化 DWG 计数
+                    if (!dwgExportCount.ContainsKey(docname))
+                    {
+                        dwgExportCount[docname] = 0;
+                    }
+
                     // 只处理第一次遇到的零件
                     if (docnameCount[docname] == 1)
                     {
 
                         Debug.WriteLine($"正在处理 {docname}...");
-                        action.Invoke( doc,swApp);
+                        int exportedCount = action.Invoke( doc, swApp);
+                        dwgExportCount[docname] = exportedCount;
 
 
 
