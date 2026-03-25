@@ -3,7 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
-using com_tools;
+
 namespace tools
 {
      class Connect
@@ -21,7 +21,7 @@ namespace tools
             try
             {
                 // 尝试获取正在运行的 SolidWorks 实例
-                object comObject = ComHelper.GetActiveObject(progId);
+                object comObject = com_tools.ComHelper.GetActiveObject(progId);
                 return (SldWorks)comObject;
             }
             catch (COMException)
