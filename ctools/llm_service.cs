@@ -24,7 +24,7 @@ namespace tools
         
         private readonly HttpClient _httpClient;
         private readonly string _shotMemoryFile;
-        private readonly string _memoryDir;
+        private readonly string _logFilePath;
         private readonly string _worksKnowledgeFile;
         private readonly Func<string>? _getCommandsDescriptionFunc;
 
@@ -43,14 +43,11 @@ namespace tools
             }
             
             _shotMemoryFile = Path.Combine(llmDir, "shot_memory.json");
-            _memoryDir = Path.Combine(llmDir, "memory_data");
+      _logFilePath = Path.Combine(llmDir, "longterm_memory.txt");
             _worksKnowledgeFile = Path.Combine(llmDir, "works_knowledge.txt");
             _getCommandsDescriptionFunc = getCommandsDescriptionFunc;
             
-            if (!Directory.Exists(_memoryDir))
-            {
-                Directory.CreateDirectory(_memoryDir);
-            }
+        
         }
 
         /// <summary>
@@ -377,6 +374,9 @@ namespace tools
             var elapsedMs = (DateTime.Now - startTime).TotalMilliseconds;
             Console.WriteLine($"\n{(imagePath != null ? "VLM" : "LLM")} 调用耗时：{elapsedMs:F0}毫秒");
             
+            // 保存用户输入到消息历史
+            messages.Add(new ChatMessage { Role = "user", Content = userPrompt });
+            
             // 保存助手回复到消息历史
             messages.Add(new ChatMessage { Role = "assistant", Content = fullResponse });
             SaveMessagesToDisk(messages);
@@ -389,48 +389,49 @@ namespace tools
         }
 
         /// <summary>
-        /// 带 Tool 调用的对话接口
+        /// 带 Tool 调用的对话接口（优化版：只传递搜索后的工具）
         /// </summary>
         public async Task<(string Response, List<ToolCall>? ToolCalls)> ChatWithToolsAsync(
             string userPrompt, 
-            List<ToolDefinition> tools)
+            List<ToolDefinition> allTools)
         {
             string apiKey = await GetApiKeyAsync();
-
-            // 先对用户输入进行 search 搜索
+        
+            // 先对用户输入进行 search 搜索，获取相关命令名称
             string searchResult = SearchCommands(userPrompt, threshold: 0.3, topK: 5);
             Console.Write($"searchResult:{searchResult}");
-            
+                    
+            // 从搜索结果中提取匹配的命令名，过滤工具列表
+            var filteredTools = FilterToolsBySearchResult(allTools, searchResult);
+                    
             // 加载历史消息
             var messages = LoadMessagesFromDisk();
-            
-            // 构建 system prompt
+                    
+            // 构建 system prompt（不包含命令列表）
             var sysPrompt = BuildSystemPrompt();
-            if (!string.IsNullOrEmpty(searchResult))
-            {
-                sysPrompt += "\n***相关命令:***\n";
-                sysPrompt += searchResult;
-            }
-            
+                    
             // 构建消息列表
             var messagesWithSystem = new List<ChatMessage>
             {
                 new ChatMessage { Role = "system", Content = sysPrompt.ToString() }
             };
             messagesWithSystem.AddRange(messages);
-            
+                    
             var startTime = DateTime.Now;
             var (response, toolCalls) = await CallStreamingWithToolsAsync(
                 messagesWithSystem, 
                 userPrompt, 
-                tools, 
+                filteredTools,  // 只传递筛选后的工具
                 apiKey, 
                 DefaultModel
             );
-            
+                    
             var elapsedMs = (DateTime.Now - startTime).TotalMilliseconds;
             Console.WriteLine($"\nLLM Tool 调用耗时：{elapsedMs:F0}毫秒");
-            
+                    
+            // 保存用户输入到消息历史
+            messages.Add(new ChatMessage { Role = "user", Content = userPrompt });
+                    
             // 保存助手回复
             if (!string.IsNullOrEmpty(response))
             {
@@ -450,11 +451,87 @@ namespace tools
                     });
                 }
             }
-            
+                    
             SaveMessagesToDisk(messages);
             SaveLongTermMemoryLog(response ?? $"ToolCall: {JsonConvert.SerializeObject(toolCalls)}");
-            
+                    
             return (response, toolCalls);
+        }
+        
+        /// <summary>
+        /// 根据搜索结果过滤工具列表
+        /// </summary>
+        private List<ToolDefinition> FilterToolsBySearchResult(List<ToolDefinition> allTools, string searchResult)
+        {
+            // 如果搜索未找到结果，返回全部工具，并给出提示
+            if (searchResult.StartsWith("未找到"))
+            {
+                Console.WriteLine($"\n[调试] 未找到匹配的命令，返回全部 {allTools.Count} 个工具");
+                        
+                // 添加一个特殊的工具来提示 AI
+                var hintTool = new ToolDefinition
+                {
+                    Type = "function",
+                    Function = new FunctionDefinition
+                    {
+                        Name = "no_matching_command_found",
+                        Description = "提示：未在命令库中找到与用户问题直接相关的命令。请根据用户的实际需求，从可用工具中选择最接近的功能，或者询问用户更具体的需求。",
+                        Parameters = new FunctionParameters()
+                    }
+                };
+                        
+                // 将提示工具添加到全部工具前面
+                var result = new List<ToolDefinition> { hintTool };
+                result.AddRange(allTools);
+                return result;
+            }
+                    
+            // 解析搜索结果中的命令名
+            var matchedCommandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var lines = searchResult.Split('\n');
+                    
+            foreach (var line in lines)
+            {
+                // 匹配格式：【分组】命令名
+                if (line.StartsWith("【") && line.Contains("】"))
+                {
+                    int closeBracketIndex = line.IndexOf('】');
+                    if (closeBracketIndex > 0 && closeBracketIndex < line.Length - 1)
+                    {
+                        string commandName = line.Substring(closeBracketIndex + 1).Trim();
+                        // 去掉异步标记
+                        int asyncIndex = commandName.IndexOf(" (异步)");
+                        if (asyncIndex >= 0)
+                        {
+                            commandName = commandName.Substring(0, asyncIndex).Trim();
+                        }
+                                
+                        if (!string.IsNullOrEmpty(commandName))
+                        {
+                            matchedCommandNames.Add(commandName.ToLower());
+                        }
+                    }
+                }
+            }
+                    
+            Console.WriteLine($"\n[调试] 从搜索结果中提取到 {matchedCommandNames.Count} 个命令名：{string.Join(", ", matchedCommandNames)}");
+                    
+            // 过滤工具列表，只保留匹配的命令
+            var filteredTools = allTools
+                .Where(t => 
+                {
+                    string funcName = t.Function.Name;
+                    // 去掉 execute_前缀进行比较
+                    if (funcName.StartsWith("execute_"))
+                    {
+                        funcName = funcName.Substring(8);
+                    }
+                    return matchedCommandNames.Contains(funcName.ToLower());
+                })
+                .ToList();
+                    
+            Console.WriteLine($"\n[调试] 过滤后剩余 {filteredTools.Count} 个工具");
+            return filteredTools;
         }
 
         /// <summary>
@@ -810,9 +887,9 @@ EndStream:
         {
             try
             {
-                var logFilePath = Path.Combine(_memoryDir, "longterm_memory.txt");
+                
                 var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
-                File.AppendAllText(logFilePath, $"[{timestamp}] {content}\n", Encoding.UTF8);
+                File.AppendAllText(_logFilePath, $"[{timestamp}] {content}\n", Encoding.UTF8);
             }
             catch (Exception ex)
             {

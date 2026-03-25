@@ -17,8 +17,8 @@ namespace tools
     {
         private readonly LlmService _llmService;
         private readonly CommandExecutor _commandExecutor;
-        private readonly string _outputDir;
-        private readonly string _loopHistoryFile;
+    
+     
         private bool _requireConfirmation = true;
         
         // 特殊命令列表
@@ -40,13 +40,9 @@ namespace tools
             _commandExecutor = new CommandExecutor(commandResolver, swAppResolver, swModelUpdater);
 
             // 初始化输出目录
-            _outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm", "loop_output");
-            if (!Directory.Exists(_outputDir))
-            {
-                Directory.CreateDirectory(_outputDir);
-            }
+        
 
-            _loopHistoryFile = Path.Combine(_outputDir, "loop_history.txt");
+            
         }
 
         /// <summary>
