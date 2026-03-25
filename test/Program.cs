@@ -9,7 +9,9 @@ namespace test
         [STAThread]
         static void Main(string[] args)
         {
-            draw_divider.process_subfolders_with_divider();
+            var swApp = Connect.run();
+            var swModel = swApp!.IActiveDoc2;
+            TopologyLabeler.LabelCurrentPart(swModel, wlIterations: 1);
         }
     }
 }
