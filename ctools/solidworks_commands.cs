@@ -17,15 +17,7 @@ namespace tools
             var dwgname = Exportdwg.run(swModel, thickness.ToString());
       
         }
-        [Command("rename", Description = "重命名当前零件", Parameters = "无", Group = "solidworks")]
-        static void RenameCommand(string[] args)
-        {
-            if (swApp == null || swModel == null) return;
 
-            rename.run(swApp, swModel);
-         
-      
-        }
         
         [Command("get_select_type", Description = "导出当前零件展开为 DWG 文件", Parameters = "无", Group = "solidworks")]
         static void Get_select_type(string[] args)

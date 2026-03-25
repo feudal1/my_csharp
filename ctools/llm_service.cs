@@ -296,20 +296,13 @@ namespace tools
         }
 
         /// <summary>
-        /// 构建 System Prompt（仅包含基础信息，不包含全部命令）
+        /// 构建 System Prompt（精简版，不包含命令格式说明）
         /// </summary>
         private string BuildSystemPrompt()
         {
             var sysPrompt = new StringBuilder();
 
             sysPrompt.AppendLine("你是一个 SolidWorks 自动化助手，可以帮助用户执行各种 SolidWorks 操作。");
-            sysPrompt.AppendLine("当用户需要执行 SolidWorks 操作时，请使用以下严格格式调用命令：");
-            sysPrompt.AppendLine("do_【命令名】参数 1 参数 2 ...");
-            sysPrompt.AppendLine("例如：do_【export_dwg】C:\\path\\to\\file.sldprt");
-            sysPrompt.AppendLine("重要：");
-            sysPrompt.AppendLine("1. 必须使用 do_前缀和中文方括号【】来标识命令");
-            sysPrompt.AppendLine("2. 执行命令前必须等待用户确认，用户输入 'y' 才会执行，'n' 跳过，'auto' 切换到自动模式。");
-            sysPrompt.AppendLine("3. 不要使用其他格式（如单独的【】或英文括号）来调用命令。");
             
             // 添加 works_knowledge.txt 的内容
             var worksKnowledge = ReadWorksKnowledge();
@@ -318,11 +311,6 @@ namespace tools
                 sysPrompt.AppendLine("\n***工作知识与规范:***");
                 sysPrompt.AppendLine(worksKnowledge);
             }
-
-            sysPrompt.AppendLine("\n***命令格式示例:***");
-            sysPrompt.AppendLine("正确：do_【export_dwg】C:\\work\\part.sldprt");
-            sysPrompt.AppendLine("错误：【export_dwg】C:\\work\\part.sldprt (缺少 do_前缀)");
-            sysPrompt.AppendLine("错误：do_[export_dwg] C:\\work\\part.sldprt (使用了英文括号)");
 
             return sysPrompt.ToString();
         }
@@ -350,7 +338,7 @@ namespace tools
         }
 
         /// <summary>
-        /// 统一的对话接口（支持文本和图像）
+        /// 统一的对话接口（支持文本和图像，不支持 Tool）
         /// </summary>
         public async Task<string> ChatAsync(string userPrompt, string? imagePath = null)
         {
@@ -362,7 +350,7 @@ namespace tools
             // 加载历史消息（不包含 system）
             var messages = LoadMessagesFromDisk();
             
-            // 构建基础的 system prompt（不包含具体命令）
+            // 构建基础的 system prompt
             var sysPrompt = BuildSystemPrompt();
             
             // 将搜索结果添加到 system prompt 中
@@ -398,6 +386,75 @@ namespace tools
             SaveLongTermMemoryLog(memoryContent);
             
             return fullResponse;
+        }
+
+        /// <summary>
+        /// 带 Tool 调用的对话接口
+        /// </summary>
+        public async Task<(string Response, List<ToolCall>? ToolCalls)> ChatWithToolsAsync(
+            string userPrompt, 
+            List<ToolDefinition> tools)
+        {
+            string apiKey = await GetApiKeyAsync();
+
+            // 先对用户输入进行 search 搜索
+            string searchResult = SearchCommands(userPrompt, threshold: 0.3, topK: 5);
+            Console.Write($"searchResult:{searchResult}");
+            
+            // 加载历史消息
+            var messages = LoadMessagesFromDisk();
+            
+            // 构建 system prompt
+            var sysPrompt = BuildSystemPrompt();
+            if (!string.IsNullOrEmpty(searchResult))
+            {
+                sysPrompt += "\n***相关命令:***\n";
+                sysPrompt += searchResult;
+            }
+            
+            // 构建消息列表
+            var messagesWithSystem = new List<ChatMessage>
+            {
+                new ChatMessage { Role = "system", Content = sysPrompt.ToString() }
+            };
+            messagesWithSystem.AddRange(messages);
+            
+            var startTime = DateTime.Now;
+            var (response, toolCalls) = await CallStreamingWithToolsAsync(
+                messagesWithSystem, 
+                userPrompt, 
+                tools, 
+                apiKey, 
+                DefaultModel
+            );
+            
+            var elapsedMs = (DateTime.Now - startTime).TotalMilliseconds;
+            Console.WriteLine($"\nLLM Tool 调用耗时：{elapsedMs:F0}毫秒");
+            
+            // 保存助手回复
+            if (!string.IsNullOrEmpty(response))
+            {
+                messages.Add(new ChatMessage { Role = "assistant", Content = response });
+            }
+            else if (toolCalls != null && toolCalls.Count > 0)
+            {
+                // 保存 Tool 调用到消息历史
+                foreach (var toolCall in toolCalls)
+                {
+                    messages.Add(new ChatMessage 
+                    { 
+                        Role = "assistant", 
+                        Content = "",
+                        ToolCallId = toolCall.Id,
+                        ToolCalls = toolCalls
+                    });
+                }
+            }
+            
+            SaveMessagesToDisk(messages);
+            SaveLongTermMemoryLog(response ?? $"ToolCall: {JsonConvert.SerializeObject(toolCalls)}");
+            
+            return (response, toolCalls);
         }
 
         /// <summary>
@@ -671,6 +728,82 @@ EndStream:
         }
 
         /// <summary>
+        /// 执行流式调用（带 Tool）
+        /// </summary>
+        public async Task<(string Response, List<ToolCall>? ToolCalls)> CallStreamingWithToolsAsync(
+            List<ChatMessage> messages, 
+            string userPrompt, 
+            List<ToolDefinition> tools, 
+            string apiKey, 
+            string model)
+        {
+            // 添加用户消息
+            var messagesWithUser = new List<object>();
+            foreach (var m in messages)
+            {
+                messagesWithUser.Add(new { role = m.Role, content = m.Content });
+            }
+            messagesWithUser.Add(new { role = "user", content = userPrompt });
+
+            var requestBody = new
+            {
+                model = model,
+                stream = false, // Tool 调用不使用流式
+                messages = messagesWithUser.ToArray(),
+                tools = tools.Select(t => new
+                {
+                    type = t.Type,
+                    function = new
+                    {
+                        name = t.Function.Name,
+                        description = t.Function.Description,
+                        parameters = t.Function.Parameters
+                    }
+                }).ToArray()
+            };
+            
+            string jsonBody = JsonConvert.SerializeObject(requestBody);
+            using var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+            
+            _httpClient!.DefaultRequestHeaders.Clear();
+            _httpClient!.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+            
+            var request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Post,
+                RequestUri = new Uri(ApiUrl),
+                Content = content
+            };
+            
+            Console.WriteLine($"\n[调试] 发送 Tool 调用请求到：{ApiUrl}");
+            
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            
+            var responseJson = await response.Content.ReadAsStringAsync();
+            var result = JObject.Parse(responseJson);
+            
+            var choices = result["choices"] as JArray;
+            if (choices == null || choices.Count == 0)
+            {
+                return ("", null);
+            }
+            
+            var message = choices[0]["message"];
+            var toolCalls = message["tool_calls"] as JArray;
+            
+            if (toolCalls != null && toolCalls.Count > 0)
+            {
+                var calls = toolCalls.ToObject<List<ToolCall>>()!;
+                Console.WriteLine($"\n[调试] 检测到 {calls.Count} 个 Tool 调用");
+                return ("", calls);
+            }
+            
+            var contentToken = message["content"];
+            return (contentToken?.ToString() ?? "", null);
+        }
+
+        /// <summary>
         /// 保存长期记忆日志
         /// </summary>
         private void SaveLongTermMemoryLog(string content)
@@ -708,11 +841,102 @@ EndStream:
     }
 
     /// <summary>
+    /// Tool 定义（用于 Function Calling）
+    /// </summary>
+    public class ToolDefinition
+    {
+        [JsonProperty("type")]
+        public string Type { get; set; } = "function";
+        
+        [JsonProperty("function")]
+        public FunctionDefinition Function { get; set; }
+    }
+    
+    /// <summary>
+    /// 函数定义
+    /// </summary>
+    public class FunctionDefinition
+    {
+        [JsonProperty("name")]
+        public string Name { get; set; }
+        
+        [JsonProperty("description")]
+        public string Description { get; set; }
+        
+        [JsonProperty("parameters")]
+        public object Parameters { get; set; }
+    }
+    
+    /// <summary>
+    /// 函数参数定义
+    /// </summary>
+    public class FunctionParameters
+    {
+        [JsonProperty("type")]
+        public string Type { get; set; } = "object";
+        
+        [JsonProperty("properties")]
+        public Dictionary<string, PropertyDefinition> Properties { get; set; } = new Dictionary<string, PropertyDefinition>();
+        
+        [JsonProperty("required")]
+        public List<string> Required { get; set; } = new List<string>();
+    }
+    
+    /// <summary>
+    /// 属性定义
+    /// </summary>
+    public class PropertyDefinition
+    {
+        [JsonProperty("type")]
+        public string Type { get; set; } = "string";
+        
+        [JsonProperty("description")]
+        public string Description { get; set; }
+    }
+    
+    /// <summary>
+    /// Tool 调用响应
+    /// </summary>
+    public class ToolCall
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
+        
+        [JsonProperty("type")]
+        public string Type { get; set; } = "function";
+        
+        [JsonProperty("function")]
+        public FunctionCall Function { get; set; }
+    }
+    
+    /// <summary>
+    /// 函数调用
+    /// </summary>
+    public class FunctionCall
+    {
+        [JsonProperty("name")]
+        public string Name { get; set; }
+        
+        [JsonProperty("arguments")]
+        public string Arguments { get; set; }
+    }
+    
+    /// <summary>
     /// 聊天消息类
     /// </summary>
     public class ChatMessage
     {
+        [JsonProperty("role")]
         public string Role { get; set; } = "";
+        
+        [JsonProperty("content")]
         public string Content { get; set; } = "";
+        
+        // Tool 调用相关字段
+        [JsonProperty("tool_call_id", NullValueHandling = NullValueHandling.Ignore)]
+        public string? ToolCallId { get; set; }
+        
+        [JsonProperty("tool_calls", NullValueHandling = NullValueHandling.Ignore)]
+        public List<ToolCall>? ToolCalls { get; set; }
     }
 }

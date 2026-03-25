@@ -13,13 +13,16 @@ namespace tools
     {
         private readonly Func<string, CommandInfo?> _commandResolver;
         private readonly Func<SldWorks?> _swAppResolver;
+        private readonly Action<ModelDoc2?> _swModelUpdater;
         
         public CommandExecutor(
             Func<string, CommandInfo?> commandResolver,
-            Func<SldWorks?> swAppResolver)
+            Func<SldWorks?> swAppResolver,
+            Action<ModelDoc2?> swModelUpdater)
         {
             _commandResolver = commandResolver;
             _swAppResolver = swAppResolver;
+            _swModelUpdater = swModelUpdater;
         }
         /// <summary>
         /// 解析并执行命令
@@ -81,16 +84,38 @@ namespace tools
                 var swApp = _swAppResolver();
                 if (swApp == null)
                 {
+                    Console.WriteLine("\n[错误] CommandExecutor: SolidWorks 未连接");
                     return "错误：未连接到 SolidWorks，请先启动程序";
                 }
 
+                // 每次执行命令前重新获取当前激活的模型
+                var swModel = (ModelDoc2)swApp.ActiveDoc;
+                _swModelUpdater(swModel);
+                
+                if (swModel == null)
+                {
+                    Console.WriteLine("\n[警告] CommandExecutor: 当前没有激活的文档");
+                }
+                else
+                {
+                    Console.WriteLine($"\n[调试] CommandExecutor: 当前模型：{swModel.GetTitle()}");
+                }
+
                 // 执行命令
+                Console.WriteLine($"\n[调试] CommandExecutor: 即将执行命令：{commandName}");
+                Console.WriteLine($"[调试] CommandExecutor: 参数数量：{args.Length}");
+                Console.WriteLine($"[调试] CommandExecutor: commandInfo.CommandType = {commandInfo.CommandType}");
+                
                 await commandInfo!.AsyncAction(args);
+
+                Console.WriteLine($"[调试] CommandExecutor: 命令 {commandName} 执行完成");
 
                 return $"命令 '{commandName}' 执行成功";
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"\n[错误] CommandExecutor: 命令执行异常：{ex}");
+                Console.WriteLine($"[错误] StackTrace: {ex.StackTrace}");
                 return $"执行命令失败：{ex.Message}";
             }
         }

@@ -5,12 +5,13 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using SolidWorks.Interop.sldworks;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace tools
 {
     /// <summary>
-    /// LLM 循环调用器
-    /// 支持批量问题循环提问，自动保存每次对话结果
+    /// LLM 循环调用器（支持 Tool 调用模式）
     /// </summary>
     public class LlmLoopCaller
     {
@@ -27,15 +28,16 @@ namespace tools
             ("exit", "退出交互式循环模式"),
             ("clear", "清空对话历史"),
             ("mode", "切换命令执行模式（确认/自动）")
-        }; // 默认需要用户确认
+        };
 
         public LlmLoopCaller(
             Func<string>? getCommandsDescriptionFunc,
             Func<string, CommandInfo?> commandResolver,
-            Func<SldWorks?> swAppResolver)
+            Func<SldWorks?> swAppResolver,
+            Action<ModelDoc2?> swModelUpdater)
         {
             _llmService = new LlmService(getCommandsDescriptionFunc);
-            _commandExecutor = new CommandExecutor(commandResolver, swAppResolver);
+            _commandExecutor = new CommandExecutor(commandResolver, swAppResolver, swModelUpdater);
 
             // 初始化输出目录
             _outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm", "loop_output");
@@ -47,63 +49,119 @@ namespace tools
             _loopHistoryFile = Path.Combine(_outputDir, "loop_history.txt");
         }
 
+        /// <summary>
+        /// 从 CommandInfo 列表构建 Tool 定义
+        /// </summary>
+        private List<ToolDefinition> BuildToolDefinitions(Dictionary<string, CommandInfo> commands)
+        {
+            var tools = new List<ToolDefinition>();
+            
+            foreach (var cmd in commands.Values)
+            {
+                var parameters = new FunctionParameters();
+                
+                // 解析参数字符串，构建参数定义
+                if (!string.IsNullOrEmpty(cmd.Parameters) && cmd.Parameters != "无")
+                {
+                    // 简单处理：将整个参数描述作为单个参数的说明
+                    parameters.Properties["argument"] = new PropertyDefinition
+                    {
+                        Type = "string",
+                        Description = cmd.Parameters
+                    };
+                    parameters.Required.Add("argument");
+                }
+                
+                tools.Add(new ToolDefinition
+                {
+                    Type = "function",
+                    Function = new FunctionDefinition
+                    {
+                        Name = $"execute_{cmd.Name}",
+                        Description = cmd.Description ?? "",
+                        Parameters = parameters
+                    }
+                });
+            }
+            
+            return tools;
+        }
 
         /// <summary>
-        /// 从 AI 响应中提取并执行命令（需要用户确认）
+        /// 执行 Tool 调用
         /// </summary>
-        private async Task<string> ProcessAIResponseAsync(string response)
+        private async Task<string> ExecuteToolCallAsync(ToolCall toolCall)
         {
-            // 匹配 do_【命令名】参数 模式（更严格的格式）
-            var pattern = @"do_【([^】]+)】\s*(.*)";
-            var matches = Regex.Matches(response, pattern);
-
-            if (matches.Count > 0)
+            try
             {
-                Console.WriteLine("\n>>> 检测到命令调用请求");
+                Console.WriteLine($"\n[调试] ExecuteToolCallAsync: 开始处理 Tool 调用");
+                Console.WriteLine($"[调试] ExecuteToolCallAsync: toolCall.Id = {toolCall.Id}");
+                Console.WriteLine($"[调试] ExecuteToolCallAsync: toolCall.Function.Name = {toolCall.Function.Name}");
+                Console.WriteLine($"[调试] ExecuteToolCallAsync: toolCall.Function.Arguments = {toolCall.Function.Arguments}");
                 
-                var results = new List<string>();
-                foreach (Match match in matches)
+                // 解析函数名（去掉 execute_前缀）
+                string functionName = toolCall.Function.Name;
+                if (functionName.StartsWith("execute_"))
                 {
-                    string commandName = match.Groups[1].Value.Trim();
-                    string parameters = match.Groups[2].Value.Trim();
-                    
-                    string fullCommand = string.IsNullOrEmpty(parameters) 
-                        ? commandName 
-                        : $"{commandName} {parameters}";
-                    Console.WriteLine($"\n建议执行的命令：{fullCommand}");
-                    
-                    // 等待用户确认
-                    if (_requireConfirmation)
-                    {
-                        Console.Write("\n是否执行此命令？(y/n/auto): ");
-                        var userInput = Console.ReadLine()?.Trim().ToLower();
-                        
-                        if (userInput == "auto")
-                        {
-                            _requireConfirmation = false;
-                            Console.WriteLine("已切换到自动模式，后续命令将直接执行");
-                        }
-                        else if (userInput != "y" && userInput != "yes")
-                        {
-                            Console.WriteLine("已跳过此命令");
-                            results.Add($"命令 '{commandName} {parameters}' 已被用户拒绝");
-                            continue;
-                        }
-                    }
-                    
-                    Console.WriteLine($"\n>>> 正在执行命令：{fullCommand}...");
-                    
-                    string result = await _commandExecutor.ExecuteCommandAsync(fullCommand);
-                    results.Add(result);
-                    
-                    Console.WriteLine($"执行结果：{result}");
+                    functionName = functionName.Substring(8);
                 }
-
-                return string.Join("\n", results);
+                
+                Console.WriteLine($"[调试] ExecuteToolCallAsync: 解析后的函数名 = {functionName}");
+                
+                // 解析参数
+                var arguments = JObject.Parse(toolCall.Function.Arguments);
+                string argumentValue = arguments["argument"]?.ToString() ?? "";
+                
+                Console.WriteLine($"[调试] ExecuteToolCallAsync: argumentValue = '{argumentValue}'");
+                
+                string fullCommand = string.IsNullOrEmpty(argumentValue) 
+                    ? functionName 
+                    : $"{functionName} {argumentValue}";
+                
+                Console.WriteLine($"\n>>> Tool 调用：{functionName}");
+                if (!string.IsNullOrEmpty(argumentValue))
+                {
+                    Console.WriteLine($"    参数：{argumentValue}");
+                }
+                
+                // 等待用户确认
+                if (_requireConfirmation)
+                {
+                    Console.Write("\n是否执行此命令？(y/n/auto): ");
+                    var userInput = await GetUserInputAsync("");
+                    userInput = userInput?.Trim().ToLower();
+                    
+                    if (userInput == "auto")
+                    {
+                        _requireConfirmation = false;
+                        Console.WriteLine("已切换到自动模式，后续命令将直接执行");
+                    }
+                    else if (userInput != "y" && userInput != "yes")
+                    {
+                        Console.WriteLine("已跳过此命令");
+                        return $"命令 '{functionName}' 已被用户拒绝";
+                    }
+                }
+                
+                Console.WriteLine($"\n>>> 正在执行命令：{fullCommand}...");
+                Console.WriteLine($"[调试] ExecuteToolCallAsync - 函数名：{functionName}");
+                Console.WriteLine($"[调试] ExecuteToolCallAsync - 参数值：{argumentValue}");
+                Console.WriteLine($"[调试] ExecuteToolCallAsync - 完整命令：{fullCommand}");
+                
+                string result = await _commandExecutor.ExecuteCommandAsync(fullCommand);
+                
+                Console.WriteLine($"\n[调试] ExecuteToolCallAsync - 执行结果：{result}");
+                Console.WriteLine($"执行结果：{result}");
+                return result;
             }
-
-            return "";
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\n[错误] ExecuteToolCallAsync 异常：{ex}");
+                Console.WriteLine($"\n❌ 执行 Tool 调用失败：{ex.Message}");
+                return $"执行失败：{ex.Message}";
+            }
         }
+
 
         /// <summary>
         /// 计算两个字符串的相似度（综合 Levenshtein 距离和字符集重叠度）
@@ -200,23 +258,26 @@ namespace tools
         }
 
         /// <summary>
-        /// 交互式循环调用（手动输入问题）
+        /// 交互式循环调用（使用 Tool 调用模式）
         /// </summary>
         public async Task InteractiveLoopAsync()
         {
-            Console.WriteLine("\n进入交互式循环模式");
-            Console.WriteLine("输入问题后按回车提交") ;
+            Console.WriteLine("\n进入交互式循环模式（Tool 调用模式）");
+            Console.WriteLine("输入问题后按回车提交");
             Debug.WriteLine("测试 debug**************************");
             Console.WriteLine("输入 'quit' 或 'exit' 退出");
             Console.WriteLine("输入 'clear' 清空对话历史");
             Console.WriteLine("输入 'mode' 切换命令执行模式（确认/自动）");
-            Console.WriteLine("AI 可以调用命令执行 SolidWorks 操作，格式：do_【命令名】参数");
-            Console.WriteLine("例如：do_【export_dwg】C:\\path\\to\\file.sldprt");
-            Console.WriteLine("当 AI 建议执行命令时，您可以选择:\n  y - 执行当前命令\n  n - 跳过当前命令\n  auto - 切换到自动模式，后续命令直接执行\n");
+            Console.WriteLine("AI 会自动识别并调用合适的命令\n");
+            
+            // 获取所有可用命令并构建 Tool 定义
+            var allCommands = CommandRegistry.Instance.GetAllCommands();
+            var toolDefinitions = BuildToolDefinitions(allCommands);
+            Console.WriteLine($"已加载 {toolDefinitions.Count} 个可用命令\n");
         
             while (true)
             {
-                // 使用非阻塞方式获取用户输入
+                // 获取用户输入
                 var input = await GetUserInputAsync("你：");
                                 
                 if (string.IsNullOrEmpty(input))
@@ -245,52 +306,33 @@ namespace tools
                     Console.WriteLine($"命令执行模式已切换为：{(_requireConfirmation ? "确认模式" : "自动模式")}\n");
                     continue;
                 }
-                
-                // 检查是否有拼写错误（模糊匹配特殊命令）
-                var fuzzyCmd = FindFuzzySpecialCommand(input, threshold: 0.6);
-                if (fuzzyCmd != null)
-                {
-                    Console.WriteLine($"\n⚠️  检测到您可能想输入 '{fuzzyCmd}'，是否执行？(y/n): ");
-                    var confirm = Console.ReadLine()?.Trim().ToLower();
-                    
-                    if (confirm == "y" || confirm == "yes")
-                    {
-                        if (fuzzyCmd == "quit" || fuzzyCmd == "exit")
-                        {
-                            Console.WriteLine("退出交互式循环模式");
-                            break;
-                        }
-                        
-                        if (fuzzyCmd == "clear")
-                        {
-                            _llmService.ClearHistory();
-                            Console.WriteLine("对话历史已清空\n");
-                            continue;
-                        }
-                        
-                        if (fuzzyCmd == "mode")
-                        {
-                            _requireConfirmation = !_requireConfirmation;
-                            Console.WriteLine($"命令执行模式已切换为：{(_requireConfirmation ? "确认模式" : "自动模式")}\n");
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine("已取消操作\n");
-                    }
-                }
         
                 try
                 {
-                    var response = await _llmService.ChatAsync(input);
-                            
-                    // 检查并执行 AI 响应中的命令
-                    var commandResult = await ProcessAIResponseAsync(response);
-                            
-                    if (!string.IsNullOrEmpty(commandResult))
+                    // 使用 Tool 调用模式
+                    var (response, toolCalls) = await _llmService.ChatWithToolsAsync(input, toolDefinitions);
+                    
+                    // 处理 Tool 调用
+                    if (toolCalls != null && toolCalls.Count > 0)
                     {
-                        Console.WriteLine($"\n>>> 命令执行完成，结果：{commandResult}");
+                        Console.WriteLine($"\n>>> 检测到 {toolCalls.Count} 个命令调用请求");
+                        
+                        var results = new List<string>();
+                        foreach (var toolCall in toolCalls)
+                        {
+                            var result = await ExecuteToolCallAsync(toolCall);
+                            results.Add(result);
+                        }
+                        
+                        if (results.Count > 0)
+                        {
+                            Console.WriteLine($"\n>>> 所有命令执行完成");
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(response))
+                    {
+                        // 普通文本回复
+                        Console.WriteLine($"\n{response}");
                     }
                 }
                 catch (Exception ex)

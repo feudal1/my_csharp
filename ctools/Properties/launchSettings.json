@@ -4,67 +4,11 @@
       "commandName": "Project",
       "commandLineArgs": ""
     },
-    "drw2png_vlm": {
-      "commandName": "Project",
-      "commandLineArgs": "drw2png_vlm"
-    },
-    "folder2merge": {
-      "commandName": "Project",
-      "commandLineArgs": "folder2merge"
-    },
     "folder_with_subfolders_draw_divider": {
       "commandName": "Project",
       "commandLineArgs": "folder_with_subfolders_draw_divider"
-    },
-    "get_all_visable_edge": {
-      "commandName": "Project",
-      "commandLineArgs": "get_all_visable_edge"
-      
-    },
-    "export2": {
-      "commandName": "Project",
-      "commandLineArgs": "export2"
-      
-    },
-    "asm2export": {
-      "commandName": "Project",
-      "commandLineArgs": "asm2export"
-
-    },
-    "asm2step": {
-      "commandName": "Project",
-      "commandLineArgs": "asm2step"
-    },
-    "folder2step": {
-      "commandName": "Project",
-      "commandLineArgs": "folder2step"
-    },
-    "plan1": {
-      "commandName": "Project",
-      "commandLineArgs": "plan1"
-    },
-    "new_drw": {
-      "commandName": "Project",
-      "commandLineArgs": "new_drw"
-      
-    },
-    "asm2check": 
-            {
-              "commandName": "Project",
-              "commandLineArgs": "asm2check"
-            },
-    
-    "asm2bom": {
-      "commandName": "Project",
-      "commandLineArgs": "asm2bom"
-    },
-    " get_all_typename": {
-      "commandName": "Project",
-      "commandLineArgs": "get_all_typename"
-    },
-    "get_select_type": {
-      "commandName": "Project",
-      "commandLineArgs": "get_select_type"
     }
+    
   }
+  
 }

@@ -101,12 +101,18 @@ namespace tools
         {
             if (string.IsNullOrEmpty(name))
             {
+                Console.WriteLine($"[调试] CommandRegistry.GetCommand - 名称为空");
                 return null;
             }
             
             lock (_lock)
             {
-                _commands.TryGetValue(name.ToLower(), out var commandInfo);
+                bool found = _commands.TryGetValue(name.ToLower(), out var commandInfo);
+                Console.WriteLine($"[调试] CommandRegistry.GetCommand('{name}') - 找到：{found}");
+                if (found && commandInfo != null)
+                {
+                    Console.WriteLine($"[调试] 命令信息 - Name: {commandInfo.Name}, Type: {commandInfo.CommandType}, Group: {commandInfo.Group}");
+                }
                 return commandInfo;
             }
         }

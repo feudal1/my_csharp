@@ -67,7 +67,9 @@ namespace tools
                     // 命令解析器：从全局注册中心查找命令
                     commandName => CommandRegistry.Instance.GetCommand(commandName),
                     // SolidWorks 实例解析器
-                    () => swApp
+                    () => swApp,
+                    // swModel 更新器
+                    (model) => swModel = model
                 );
            
                 var task = Task.Run(() => loopCaller.InteractiveLoopAsync());
@@ -188,12 +190,10 @@ namespace tools
                     if (string.IsNullOrEmpty(cmd.Parameters) || cmd.Parameters == "无")
                     {
                         sb.AppendLine($"    参数：无");
-                        sb.AppendLine($"    示例：do_【{cmd.Name}】");
                     }
                     else
                     {
                         sb.AppendLine($"    参数：{cmd.Parameters}");
-                        sb.AppendLine($"    示例：do_【{cmd.Name}】<参数值>");
                     }
                 }
             }

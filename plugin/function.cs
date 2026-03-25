@@ -47,6 +47,7 @@ using System.Linq;
             }
            
             asm2do.run(swApp, swModel, (model, app) => {
+                checkk_factor.run(app,model);
                 return exportdwg2_body.run(model);
             });
 
