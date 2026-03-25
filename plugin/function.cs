@@ -80,6 +80,7 @@ using System.Linq;
                 swApp.SendMsgToUser("请先打开一个工程图文档");
                 return;
             }
+            checkk_factor.run(swApp,swModel);
             exportdwg2_body.run(swModel);
 
 

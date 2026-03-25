@@ -37,6 +37,7 @@ public class checkk_factor
             Debug.Print("      扣除倍数      = " + debuct_factor);
             Debug.Print("      补偿换扣除 = " + a2d);
             Debug.Print("      k因子换扣除 = " + k2d);
+            Console.WriteLine($"k因子正确,{modelname}+{FeatureName}");
             return;
         }
         Debug.Print("      BendAllowance    = " + swCustBend.BendAllowance * 1000.0 + " mm");
