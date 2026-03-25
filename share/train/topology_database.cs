@@ -8,6 +8,34 @@ using Newtonsoft.Json;
 namespace tools
 {
     /// <summary>
+    /// 零件 WL 数据辅助类
+    /// </summary>
+    public class PartWLData
+    {
+        public List<Dictionary<string, int>> WLFreqs { get; set; } = new List<Dictionary<string, int>>();
+        public List<LabelData> Labels { get; set; } = new List<LabelData>();
+    }
+
+    /// <summary>
+    /// 标注数据辅助类
+    /// </summary>
+    public class LabelData
+    {
+        public string Category { get; set; }
+        public string Value { get; set; }
+        public double Confidence { get; set; }
+        public string Notes { get; set; }
+
+        public LabelData(string category, string value, double confidence, string notes)
+        {
+            Category = category;
+            Value = value;
+            Confidence = confidence;
+            Notes = notes;
+        }
+    }
+
+    /// <summary>
     /// 零件拓扑图数据库 - 使用 SQLite 存储 WL 图核结果
     /// </summary>
     public class TopologyDatabase
@@ -30,6 +58,12 @@ namespace tools
             using (var connection = new SQLiteConnection(_connectionString))
             {
                 connection.Open();
+                
+                // 启用外键约束
+                using (var cmd = new SQLiteCommand("PRAGMA foreign_keys = ON;", connection))
+                {
+                    cmd.ExecuteNonQuery();
+                }
 
                 // 创建零件表
                 string createPartsTable = @"
@@ -204,6 +238,87 @@ namespace tools
                 }
 
                 Console.WriteLine($"✓ 已标注：{category} = {value} (置信度：{confidence})");
+            }
+        }
+
+        /// <summary>
+        /// 删除指定 ID 的标注
+        /// </summary>
+        public void DeleteLabel(int labelId)
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 启用外键约束
+                using (var cmd = new SQLiteCommand("PRAGMA foreign_keys = ON;", connection))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+                
+                string delete = "DELETE FROM user_labels WHERE id = @id";
+                
+                using (var cmd = new SQLiteCommand(delete, connection))
+                {
+                    cmd.Parameters.AddWithValue("@id", labelId);
+                    int rowsAffected = cmd.ExecuteNonQuery();
+                    
+                    if (rowsAffected > 0)
+                    {
+                        Console.WriteLine($"✓ 标注 ID {labelId} 已删除");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"× 未找到标注 ID {labelId}");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 删除零件 ID 为 x 的所有数据（包括 WL 结果和标注）
+        /// </summary>
+        public void DeletePartData(int partId)
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 启用外键约束
+                using (var cmd = new SQLiteCommand("PRAGMA foreign_keys = ON;", connection))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+                
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        // 直接删除零件，外键级联会自动删除 wl_results 和 user_labels 中的关联数据
+                        string deletePart = "DELETE FROM parts WHERE id = @id";
+                        using (var cmd = new SQLiteCommand(deletePart, connection, transaction))
+                        {
+                            cmd.Parameters.AddWithValue("@id", partId);
+                            int rowsAffected = cmd.ExecuteNonQuery();
+                            
+                            if (rowsAffected > 0)
+                            {
+                                transaction.Commit();
+                                Console.WriteLine($"✓ 零件 ID {partId} 及其所有关联数据已删除");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"× 未找到零件 ID {partId}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        transaction.Rollback();
+                        Console.WriteLine($"× 删除零件失败：{ex.Message}");
+                        throw;
+                    }
+                }
             }
         }
 
@@ -436,6 +551,166 @@ namespace tools
 
                 return (partCount, labelCount, categoryStats);
             }
+        }
+
+        /// <summary>
+        /// 获取所有已使用的标注类别
+        /// </summary>
+        public List<string> GetAllCategories()
+        {
+            var categories = new List<string>();
+
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                string query = "SELECT DISTINCT label_category FROM user_labels ORDER BY label_category";
+
+                using (var cmd = new SQLiteCommand(query, connection))
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        categories.Add(reader.GetString(0));
+                    }
+                }
+            }
+
+            return categories;
+        }
+
+        /// <summary>
+        /// 根据 WL 标签频率查找具有相似拓扑特征的零件类别
+        /// </summary>
+        /// <param name="wlFrequencies">待查询零件的 WL 标签频率列表</param>
+        /// <param name="topK">返回最相似的 K 个类别</param>
+        /// <param name="minSimilarity">最小相似度阈值</param>
+        /// <returns>类别及其相似度、置信度的列表</returns>
+        public List<(string Category, string PartName, double Similarity, double Confidence, string Notes)> 
+            FindCategoriesByWLTags(
+                List<Dictionary<string, int>> wlFrequencies, 
+                int topK = 10, 
+                double minSimilarity = 0.3)
+        {
+            var results = new List<(string, string, double, double, string)>();
+            
+            if (wlFrequencies.Count == 0)
+            {
+                Console.WriteLine("警告：WL 频率数据为空");
+                return results;
+            }
+
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 获取所有已标注零件及其 WL 结果
+                string query = @"
+                    SELECT p.id, p.part_name, ul.label_category, ul.label_value, 
+                           ul.confidence, ul.notes, wr.label_frequencies
+                    FROM parts p
+                    INNER JOIN wl_results wr ON p.id = wr.part_id
+                    INNER JOIN user_labels ul ON p.id = ul.part_id
+                    WHERE wr.iteration = 0
+                    ORDER BY p.part_name";
+
+                var partData = new Dictionary<string, PartWLData>();
+
+                using (var cmd = new SQLiteCommand(query, connection))
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        string partName = reader.GetString(1);
+                        string category = reader.GetString(2);
+                        string value = reader.GetString(3);
+                        double confidence = reader.GetDouble(4);
+                        string notes = reader.IsDBNull(5) ? "" : reader.GetString(5);
+                        string freqJson = reader.GetString(6);
+
+                        var frequencies = JsonConvert.DeserializeObject<Dictionary<string, int>>(freqJson);
+                        
+                        if (frequencies == null)
+                        {
+                            Console.WriteLine($"警告：无法解析零件 {partName} 的 WL 频率数据");
+                            continue;
+                        }
+
+                        if (!partData.ContainsKey(partName))
+                        {
+                            partData[partName] = new PartWLData();
+                        }
+
+                        // 只添加一次 WL 频率
+                        if (partData[partName].WLFreqs.Count == 0)
+                        {
+                            partData[partName].WLFreqs.Add(frequencies);
+                        }
+
+                        partData[partName].Labels.Add(new LabelData(category, value, confidence, notes));
+                    }
+                }
+
+                // 计算与每个零件的相似度
+                foreach (var kvp in partData)
+                {
+                    string partName = kvp.Key;
+                    PartWLData data = kvp.Value;
+                    
+                    double similarity = WLGraphKernel.CalculateSimilarity(wlFrequencies[0], data.WLFreqs[0]);
+                    
+                    if (similarity >= minSimilarity)
+                    {
+                        foreach (var label in data.Labels)
+                        {
+                            results.Add((label.Category, partName, similarity, label.Confidence, label.Notes));
+                        }
+                    }
+                }
+
+                // 按相似度降序排序并取 Top-K
+                results = results
+                    .OrderByDescending(r => r.Item3)  // Similarity
+                    .ThenByDescending(r => r.Item4)  // Confidence
+                    .Take(topK)
+                    .ToList();
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// 根据 WL 标签查找类别（简化版，返回推荐类别及出现频率）
+        /// </summary>
+        /// <param name="wlFrequencies">待查询零件的 WL 标签频率</param>
+        /// <param name="topK">返回最相关的 K 个类别</param>
+        /// <param name="minSimilarity">最小相似度阈值</param>
+        /// <returns>类别名称、推荐次数、平均相似度、平均置信度</returns>
+        public List<(string Category, int Count, double AvgSimilarity, double AvgConfidence)> 
+            FindTopCategoriesByWLTags(
+                List<Dictionary<string, int>> wlFrequencies, 
+                int topK = 5, 
+                double minSimilarity = 0.3)
+        {
+            var detailedResults = FindCategoriesByWLTags(wlFrequencies, topK: 100, minSimilarity: minSimilarity);
+            
+            // 按类别分组统计
+            var categoryGroups = detailedResults
+                .GroupBy(r => r.Category)
+                .Select(g => new
+                {
+                    Category = g.Key,
+                    Count = g.Count(),
+                    AvgSimilarity = g.Average(r => r.Similarity),
+                    AvgConfidence = g.Average(r => r.Confidence)
+                })
+                .OrderByDescending(x => x.Count)
+                .ThenByDescending(x => x.AvgSimilarity)
+                .Take(topK)
+                .ToList();
+
+            return categoryGroups
+                .Select(x => (x.Category, x.Count, x.AvgSimilarity, x.AvgConfidence))
+                .ToList();
         }
     }
 }

@@ -19,16 +19,16 @@ public class checkk_factor
           
         
 
-        else if (swCustBend.Type==4&& (debuct_factor < 1.6 || debuct_factor > 1.8))
+        else if (swCustBend.Type==4&& (debuct_factor < 1.6 || debuct_factor > 1.82))
         
    
           
              Console.WriteLine($"k因子错误,{modelname}+{FeatureName},扣除倍数：{debuct_factor}");
        
  
-          else if (swCustBend.Type==3&& (a2d < 1.6 || a2d > 1.8))  
+          else if (swCustBend.Type==3&& (a2d < 1.6 || a2d > 1.82))  
               Console.WriteLine($"k因子错误,{modelname}+{FeatureName},补偿换扣除：{a2d}");
-        else if (BendRadius <2 &swCustBend.Type==2&& (k2d < 1.6 || k2d > 1.8))  
+        else if (BendRadius <2 &swCustBend.Type==2&& (k2d < 1.6 || k2d > 1.82))  
               Console.WriteLine($"k因子错误,{modelname}+{FeatureName}, k因子换扣除：{k2d}");
         else if(Math.Abs(angle-90)>0.5&&Math.Abs(swCustBend.KFactor-0.25)>0.05)
             Console.WriteLine($"非90度折弯,k因子错误,{modelname}+{FeatureName},k因子：{swCustBend.KFactor}");

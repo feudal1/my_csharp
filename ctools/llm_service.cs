@@ -191,8 +191,10 @@ namespace tools
                 }
                 else
                 {
-                    // 模糊搜索：检查是否包含关键词
-                    if (line.ToLower().Contains(keyword.ToLower()))
+                    // 模糊搜索：使用相似度匹配而不是简单包含
+                    double score = CalculateLineSimilarity(keyword, line);
+                    
+                    if (score >= threshold)
                     {
                         // 回溯找到这个命令块的开头
                         int currentIndex = Array.IndexOf(lines, line);

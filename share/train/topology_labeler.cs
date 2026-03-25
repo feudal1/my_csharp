@@ -77,6 +77,22 @@ namespace tools
                     }
                 }
 
+                // 显示所有已使用的标注类别
+                Console.WriteLine("\n=== 可用标注类别参考 ===");
+                var allCategories = _database.GetAllCategories();
+                if (allCategories.Count > 0)
+                {
+                    Console.WriteLine($"共 {allCategories.Count} 个类别:");
+                    foreach (var cat in allCategories)
+                    {
+                        Console.WriteLine($"  - {cat}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("  (暂无历史标注类别)");
+                }
+
                 // 提示用户输入新标注
                 Console.WriteLine("\n=== 添加标注 ===");
                 
@@ -87,7 +103,7 @@ namespace tools
                 if (!string.IsNullOrEmpty(category))
                 {
                     // 添加标注（值设为空）
-                    _database!.AddLabel(partId, category, value: "", confidence: 1.0, notes: "");
+                    _database!.AddLabel(partId, category!, value: "", confidence: 1.0, notes: "");
                     Console.WriteLine($"✓ 标注已添加：{category}");
                 }
                 else
@@ -196,6 +212,32 @@ namespace tools
         }
 
         /// <summary>
+        /// 删除指定标注
+        /// </summary>
+        public static void DeleteLabel(int labelId)
+        {
+            if (_database == null)
+            {
+                Initialize();
+            }
+
+            _database?.DeleteLabel(labelId);
+        }
+
+        /// <summary>
+        /// 删除零件 ID 为 x 的所有数据（包括 WL 结果和标注）
+        /// </summary>
+        public static void DeletePartData(int partId)
+        {
+            if (_database == null)
+            {
+                Initialize();
+            }
+
+            _database?.DeletePartData(partId);
+        }
+
+        /// <summary>
         /// 导出零件的 WL 结果
         /// </summary>
         public static void ExportPartWL(int partId)
@@ -292,6 +334,112 @@ namespace tools
             ShowStatistics();
             
             Console.WriteLine("\n提示：使用 'view_parts' 命令查看已标注的零件，然后手动添加标注");
+        }
+
+        /// <summary>
+        /// 根据当前零件的 WL 特征查找推荐类别
+        /// </summary>
+        public static void FindCategoriesByWL(ModelDoc2 swModel, int wlIterations = 1, int topK = 5)
+        {
+            if (swModel == null)
+            {
+                Console.WriteLine("× 错误：没有打开的活动文档");
+                return;
+            }
+
+            if (_database == null)
+            {
+                Initialize();
+            }
+
+            try
+            {
+                // 构建拓扑图
+                Console.WriteLine("\n=== 构建零件拓扑图 ===");
+                var graph = FaceGraphBuilder.BuildGraph(swModel);
+                
+                if (graph == null || graph.Nodes.Count == 0)
+                {
+                    Console.WriteLine("× 无法构建拓扑图");
+                    return;
+                }
+
+                // 执行 WL 迭代
+                Console.WriteLine($"\n=== 执行 WL 迭代 ({wlIterations} 次) ===");
+                var wlFrequencies = WLGraphKernel.PerformWLIterations(graph, wlIterations);
+
+                // 查找相似类别
+                Console.WriteLine("\n=== 查找推荐类别 ===");
+                var recommendations = _database!.FindTopCategoriesByWLTags(wlFrequencies, topK: topK);
+
+                if (recommendations.Count == 0)
+                {
+                    Console.WriteLine("未找到相似的已标注零件");
+                    return;
+                }
+
+                Console.WriteLine($"\n{'='*60}");
+                Console.WriteLine("TOP-{0} 推荐类别", topK);
+                Console.WriteLine($"{'='*60}");
+                
+                for (int i = 0; i < recommendations.Count; i++)
+                {
+                    var (category, count, avgSim, avgConf) = recommendations[i];
+                    Console.WriteLine($"{i + 1}. 类别：{category}");
+                    Console.WriteLine($"   出现次数：{count} 次");
+                    Console.WriteLine($"   平均相似度：{avgSim:F3} ({avgSim * 100:F1}%)");
+                    Console.WriteLine($"   平均置信度：{avgConf:F2}");
+                    Console.WriteLine();
+                }
+
+                Console.WriteLine($"{'='*60}\n");
+                
+                // 显示详细信息
+                Console.WriteLine("按 Enter 查看详细匹配结果...");
+                if (Console.ReadKey().Key == ConsoleKey.Enter)
+                {
+                    ViewDetailedMatches(wlFrequencies, topK: 10);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"× 查找过程出错：{ex.Message}");
+                Console.WriteLine(ex.StackTrace);
+            }
+        }
+
+        /// <summary>
+        /// 查看详细匹配结果
+        /// </summary>
+        private static void ViewDetailedMatches(List<Dictionary<string, int>> wlFrequencies, int topK = 10)
+        {
+            var detailedResults = _database!.FindCategoriesByWLTags(wlFrequencies, topK: topK);
+
+            if (detailedResults.Count == 0)
+            {
+                Console.WriteLine("无详细匹配结果");
+                return;
+            }
+
+            Console.WriteLine($"\n{'='*80}");
+            Console.WriteLine("详细匹配结果");
+            Console.WriteLine($"{'='*80}\n");
+
+            for (int i = 0; i < detailedResults.Count; i++)
+            {
+                var (category, partName, similarity, confidence, notes) = detailedResults[i];
+                Console.WriteLine($"[{i + 1}] 零件：{partName}");
+                Console.WriteLine($"    类别：{category}");
+                Console.WriteLine($"    相似度：{similarity:F3} ({similarity * 100:F1}%)");
+                Console.WriteLine($"    置信度：{confidence:F2}");
+                if (!string.IsNullOrEmpty(notes))
+                {
+                    Console.WriteLine($"    备注：{notes}");
+                }
+                Console.WriteLine();
+            }
+
+            Console.WriteLine($"{'='*80}\n");
         }
     }
 }

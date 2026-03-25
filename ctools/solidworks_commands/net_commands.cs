@@ -57,7 +57,7 @@ namespace tools
             TopologyLabeler.SearchByCategory(category, value);
         }
 
-        [Command("label_stats", Description = "显示数据库统计信息", Parameters = "无", Group = "train")]
+        [Command("label_stats", Description = "显示数据库统计信息，打印一下数据库所有数据", Parameters = "无", Group = "train")]
         static void ShowLabelStats(string[] args)
         {
             TopologyLabeler.ShowStatistics();
@@ -108,4 +108,46 @@ namespace tools
             {
                 Console.WriteLine("错误：零件 ID 必须是数字");
             }
-        }}}
+        }
+
+        [Command("label_delete", Description = "删除指定的标注 (删除零件 id 为 x 的数据)", Parameters = "[标注 ID]", Group = "train")]
+        static void DeleteLabel(string[] args)
+        {
+            if (args.Length < 1)
+            {
+                Console.WriteLine("用法：label_delete [标注 ID]");
+                Console.WriteLine("提示：使用 label_search 或 view_parts 查看标注 ID");
+                return;
+            }
+        
+            if (int.TryParse(args[0], out int labelId))
+            {
+                TopologyLabeler.DeleteLabel(labelId);
+            }
+            else
+            {
+                Console.WriteLine("错误：标注 ID 必须是数字");
+            }
+        }
+        
+        [Command("delete_part", Description = "删除零件 ID 为 x 的所有数据（包括 WL 结果和标注）", Parameters = "[零件 ID]", Group = "train")]
+        static void DeletePart(string[] args)
+        {
+            if (args.Length < 1)
+            {
+                Console.WriteLine("用法：delete_part [零件 ID]");
+                Console.WriteLine("提示：使用 view_parts 查看零件 ID");
+                return;
+            }
+        
+            if (int.TryParse(args[0], out int partId))
+            {
+                TopologyLabeler.DeletePartData(partId);
+            }
+            else
+            {
+                Console.WriteLine("错误：零件 ID 必须是数字");
+            }
+        }
+    }
+}
