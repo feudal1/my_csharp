@@ -2,11 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
+using System.Text;
 using System.Text.RegularExpressions;
 using SolidWorks.Interop.sldworks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.IO;
 
 namespace tools
 {
@@ -17,6 +20,8 @@ namespace tools
     {
         private readonly LlmService _llmService;
         private readonly CommandExecutor _commandExecutor;
+        private StringWriter? _consoleOutputCapture;
+        private TextWriter _originalConsoleOutput = null!;
     
      
         private bool _requireConfirmation = true;
@@ -39,10 +44,9 @@ namespace tools
             _llmService = new LlmService(getCommandsDescriptionFunc);
             _commandExecutor = new CommandExecutor(commandResolver, swAppResolver, swModelUpdater);
 
-            // 初始化输出目录
-        
-
-            
+            // 初始化输出捕获
+            _consoleOutputCapture = new StringWriter();
+            _originalConsoleOutput = Console.Out;
         }
 
         /// <summary>
@@ -94,39 +98,39 @@ namespace tools
                 Console.WriteLine($"[调试] ExecuteToolCallAsync: toolCall.Id = {toolCall.Id}");
                 Console.WriteLine($"[调试] ExecuteToolCallAsync: toolCall.Function.Name = {toolCall.Function.Name}");
                 Console.WriteLine($"[调试] ExecuteToolCallAsync: toolCall.Function.Arguments = {toolCall.Function.Arguments}");
-                
+                        
                 // 解析函数名（去掉 execute_前缀）
                 string functionName = toolCall.Function.Name;
                 if (functionName.StartsWith("execute_"))
                 {
                     functionName = functionName.Substring(8);
                 }
-                
+                        
                 Console.WriteLine($"[调试] ExecuteToolCallAsync: 解析后的函数名 = {functionName}");
-                
+                        
                 // 解析参数
                 var arguments = JObject.Parse(toolCall.Function.Arguments);
                 string argumentValue = arguments["argument"]?.ToString() ?? "";
-                
+                        
                 Console.WriteLine($"[调试] ExecuteToolCallAsync: argumentValue = '{argumentValue}'");
-                
+                        
                 string fullCommand = string.IsNullOrEmpty(argumentValue) 
                     ? functionName 
                     : $"{functionName} {argumentValue}";
-                
+                        
                 Console.WriteLine($"\n>>> Tool 调用：{functionName}");
                 if (!string.IsNullOrEmpty(argumentValue))
                 {
                     Console.WriteLine($"    参数：{argumentValue}");
                 }
-                
+                        
                 // 等待用户确认
                 if (_requireConfirmation)
                 {
                     Console.Write("\n是否执行此命令？(y/n/auto): ");
                     var userInput = await GetUserInputAsync("");
                     userInput = userInput?.Trim().ToLower();
-                    
+                            
                     if (userInput == "auto")
                     {
                         _requireConfirmation = false;
@@ -135,19 +139,37 @@ namespace tools
                     else if (userInput != "y" && userInput != "yes")
                     {
                         Console.WriteLine("已跳过此命令");
-                        return $"命令 '{functionName}' 已被用户拒绝";
+                        return $"命令 '{functionName}' 已经被用户拒绝";
                     }
                 }
-                
+                        
                 Console.WriteLine($"\n>>> 正在执行命令：{fullCommand}...");
                 Console.WriteLine($"[调试] ExecuteToolCallAsync - 函数名：{functionName}");
                 Console.WriteLine($"[调试] ExecuteToolCallAsync - 参数值：{argumentValue}");
                 Console.WriteLine($"[调试] ExecuteToolCallAsync - 完整命令：{fullCommand}");
-                
+                        
+                // 开始捕获 Console 输出
+                _consoleOutputCapture!.GetStringBuilder().Clear();
+                Console.SetOut(_consoleOutputCapture);
+                        
                 string result = await _commandExecutor.ExecuteCommandAsync(fullCommand);
-                
+                        
+                // 恢复原始 Console 输出
+                Console.SetOut(_originalConsoleOutput);
+                        
+                // 获取捕获的输出内容
+                string capturedOutput = _consoleOutputCapture.ToString();
+                        
                 Console.WriteLine($"\n[调试] ExecuteToolCallAsync - 执行结果：{result}");
                 Console.WriteLine($"执行结果：{result}");
+                        
+                // 如果有捕获的输出，将其添加到结果中
+                if (!string.IsNullOrWhiteSpace(capturedOutput))
+                {
+                    Console.WriteLine($"\n[调试] 捕获到 Console 输出:\n{capturedOutput}");
+                    return $"{result}\n\n***命令输出:\n{capturedOutput}";
+                }
+                        
                 return result;
             }
             catch (Exception ex)
@@ -323,6 +345,9 @@ namespace tools
                         if (results.Count > 0)
                         {
                             Console.WriteLine($"\n>>> 所有命令执行完成");
+                            
+                            // 将 Tool 调用结果保存到短期记忆
+                            SaveToolResultsToMemory(toolCalls, results);
                         }
                     }
                     else if (!string.IsNullOrEmpty(response))
@@ -338,6 +363,99 @@ namespace tools
             }
         }
         
+        /// <summary>
+        /// 将 Tool 调用结果保存到短期记忆
+        /// </summary>
+        private void SaveToolResultsToMemory(List<ToolCall> toolCalls, List<string> results)
+        {
+            try
+            {
+                // 构建 Tool 调用结果的系统消息
+                var sb = new StringBuilder();
+                sb.AppendLine("\n***Tool 调用执行结果:***");
+                
+                for (int i = 0; i < toolCalls.Count; i++)
+                {
+                    var toolCall = toolCalls[i];
+                    var result = results[i];
+                    
+                    // 解析函数名（去掉 execute_前缀）
+                    string functionName = toolCall.Function.Name;
+                    if (functionName.StartsWith("execute_"))
+                    {
+                        functionName = functionName.Substring(8);
+                    }
+                    
+                    sb.AppendLine($"\n- 命令：{functionName}");
+                    sb.AppendLine($"  结果：{result}");
+                }
+                
+                // 将结果作为 assistant 消息保存
+                var messages = LoadMessagesFromDisk();
+                messages.Add(new ChatMessage 
+                { 
+                    Role = "assistant", 
+                    Content = sb.ToString() 
+                });
+                
+                SaveMessagesToDisk(messages);
+                
+                Console.WriteLine($"[调试] Tool 调用结果已保存到短期记忆");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[警告] 保存 Tool 调用结果失败：{ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// 从磁盘加载消息历史（复用 LlmService 的方法）
+        /// </summary>
+        private List<ChatMessage> LoadMessagesFromDisk()
+        {
+            try
+            {
+                string shotMemoryFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm", "shot_memory.json");
+                if (File.Exists(shotMemoryFile))
+                {
+                    var json = File.ReadAllText(shotMemoryFile, System.Text.Encoding.UTF8);
+                    var messages = JsonConvert.DeserializeObject<List<ChatMessage>>(json) ?? new List<ChatMessage>();
+                    return messages.Where(m => m.Role != "system").ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"加载消息历史失败：{ex.Message}");
+            }
+            
+            return new List<ChatMessage>();
+        }
+        
+        /// <summary>
+        /// 保存消息历史到磁盘（复用 LlmService 的方法）
+        /// </summary>
+        private void SaveMessagesToDisk(List<ChatMessage> messages)
+        {
+            try
+            {
+                string shotMemoryFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm", "shot_memory.json");
+                var filteredMessages = messages.Where(m => m.Role != "system").ToList();
+                
+                // 如果消息超过 10 条，保留最近的 10 条（5 轮对话）
+                if (filteredMessages.Count > 10)
+                {
+                    filteredMessages = filteredMessages.Skip(filteredMessages.Count - 10).ToList();
+                }
+                
+                var json = JsonConvert.SerializeObject(filteredMessages, Formatting.Indented);
+                File.WriteAllText(shotMemoryFile, json, System.Text.Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"保存消息历史失败：{ex.Message}");
+            }
+        }
+
         /// <summary>
         /// 异步获取用户输入（非阻塞）
         /// </summary>

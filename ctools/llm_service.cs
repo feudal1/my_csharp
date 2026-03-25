@@ -73,13 +73,21 @@ namespace tools
         }
 
         /// <summary>
-        /// 保存消息历史到本地 JSON 文件
+        /// 保存消息历史到本地 JSON 文件（超过 10 条自动截断）
         /// </summary>
         private void SaveMessagesToDisk(List<ChatMessage> messages)
         {
             try
             {
                 var filteredMessages = messages.Where(m => m.Role != "system").ToList();
+                
+                // 如果消息超过 10 条，保留最近的 10 条（5 轮对话）
+                if (filteredMessages.Count > 10)
+                {
+                    filteredMessages = filteredMessages.Skip(filteredMessages.Count - 10).ToList();
+                    Console.WriteLine($"\n[调试] 消息数量超过 10 条，已截断保留最近 10 条");
+                }
+                
                 var json = JsonConvert.SerializeObject(filteredMessages, Formatting.Indented);
                 File.WriteAllText(_shotMemoryFile, json, Encoding.UTF8);
             }
