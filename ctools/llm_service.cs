@@ -128,6 +128,14 @@ namespace tools
                 try
                 {
                     string allContent = _getCommandsDescriptionFunc();
+                    Debug.WriteLine($"\n[调试] 命令描述内容长度：{allContent.Length} 字符");
+                    Debug.WriteLine($"[调试] 搜索关键词：'{keyword}'");
+                    Debug.WriteLine($"[调试] 阈值：{threshold}, topK: {topK}");
+                    
+                    // 保存命令描述到文件以便调试
+                    System.IO.File.WriteAllText("debug_commands.txt", allContent, Encoding.UTF8);
+                    Debug.WriteLine($"[调试] 命令描述已保存到 debug_commands.txt");
+                    
                     return SearchInContent(allContent, keyword, threshold, topK);
                 }
                 catch (Exception ex)
@@ -140,7 +148,7 @@ namespace tools
         }
 
         /// <summary>
-        /// 在内容中搜索相关命令（简化版：只使用模糊搜索）
+        /// 在内容中搜索相关命令（重构版：以命令块为单位匹配）
         /// </summary>
         private string SearchInContent(string content, string keyword, double threshold, int? topK)
         {
@@ -150,101 +158,144 @@ namespace tools
             }
 
             var lines = content.Split('\n');
-            var resultBlocks = new List<List<string>>();
+            var commandBlocks = new List<List<string>>();
             var currentBlock = new List<string>();
-            bool inBlock = false;
             
+            // 第一步：解析所有命令块
             foreach (var line in lines)
             {
-                // 检测新命令开始（格式：【分组】命令名）
                 if (line.StartsWith("【") && line.Contains("】"))
                 {
-                    // 保存上一个匹配的块
-                    if (inBlock && currentBlock.Count > 0)
+                    if (currentBlock.Count > 0)
                     {
-                        resultBlocks.Add(new List<string>(currentBlock));
+                        commandBlocks.Add(new List<string>(currentBlock));
                     }
-
                     currentBlock.Clear();
                     currentBlock.Add(line);
-                    inBlock = false;
-
-                    // 检查命令名是否包含关键词
-                    if (line.ToLower().Contains(keyword.ToLower()))
-                    {
-                        inBlock = true;
-                    }
                 }
-                else if (inBlock)
+                else if (currentBlock.Count > 0)
                 {
-                    // 如果在匹配的块中，继续收集后续行（说明、参数等）
-                    if (line.StartsWith("    ") || string.IsNullOrWhiteSpace(line))
+                    currentBlock.Add(line);
+                }
+            }
+            
+            if (currentBlock.Count > 0)
+            {
+                commandBlocks.Add(currentBlock);
+            }
+            
+            Debug.WriteLine($"[调试] 解析到 {commandBlocks.Count} 个命令块");
+            
+            // 第二步：对每个命令块计算匹配分数
+            var matchedBlocks = new List<(List<string> Block, double Score)>();
+            string keywordLower = keyword.ToLower();
+            
+            foreach (var block in commandBlocks)
+            {
+                // 将整个块合并为一个字符串进行匹配
+                string blockText = string.Join(" ", block).ToLower();
+                
+                // 快速检查：如果整个块包含关键词，直接高分匹配
+                if (blockText.Contains(keywordLower))
+                {
+                    matchedBlocks.Add((block, 1.0));
+                    continue;
+                }
+                
+                // 分词匹配：将用户输入按空格、标点、中文常见分隔符分割
+                // 对于中文，我们还需要按字符级别进行切分
+                var separators = new[] { ' ', ',', '.', ',', '.', '、', '(', ')', '（', '）', ':', ':', '\n', '\t' };
+                var rawKeywords = keywordLower.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+                
+                // 如果只有一个长词（可能是中文句子），需要进行字符级分词
+                List<string> keywords = new List<string>();
+                if (rawKeywords.Length == 1 && rawKeywords[0].Length > 3)
+                {
+                    string longWord = rawKeywords[0];
+                    
+                    // 提取有意义的词汇（2-4 个字）
+                    for (int i = 0; i < longWord.Length - 1; i++)
                     {
-                        currentBlock.Add(line);
+                        // 提取 2-4 个字的词
+                        for (int len = 2; len <= 4 && i + len <= longWord.Length; len++)
+                        {
+                            string subWord = longWord.Substring(i, len);
+                            // 避免添加纯标点或重复的词
+                            if (!keywords.Contains(subWord) && !string.IsNullOrWhiteSpace(subWord.Trim()))
+                            {
+                                keywords.Add(subWord);
+                            }
+                        }
                     }
-                    else
-                    {
-                        // 遇到非缩进的内容，块结束
-                        resultBlocks.Add(new List<string>(currentBlock));
-                        inBlock = false;
-                    }
+                        Debug.WriteLine($"[调试] 中文句子分词结果：[{string.Join(", ", keywords.Take(10))}...] (共{keywords.Count}个词)");
                 }
                 else
                 {
-                    // 模糊搜索：使用相似度匹配而不是简单包含
-                    double score = CalculateLineSimilarity(keyword, line);
+                    keywords = rawKeywords.ToList();
+                }
+                int matchCount = 0;
+                int totalKeywords = keywords.Count;
+                
+                Debug.WriteLine($"[调试] 检查命令块，关键词：[{string.Join(", ", keywords)}]");
+                
+                foreach (var kw in keywords)
+                {
+                    if (kw.Length >= 2 && blockText.Contains(kw))
+                    {
+                        matchCount++;
+                        Debug.WriteLine($"[调试]   ✓ 匹配到关键词：{kw}");
+                    }
+                }
+                
+                // 计算分词匹配率
+                if (totalKeywords > 0)
+                {
+                    double keywordRatio = (double)matchCount / totalKeywords;
                     
+                    Debug.WriteLine($"[调试]   匹配率：{matchCount}/{totalKeywords} = {keywordRatio:F2}");
+                    
+                    // 如果超过 30% 的关键词匹配，认为匹配成功
+                    if (keywordRatio >= 0.3)
+                    {
+                        matchedBlocks.Add((block, 0.6 + keywordRatio * 0.4));
+                        Debug.WriteLine($"[调试]   ✓ 匹配成功，分数：{0.6 + keywordRatio * 0.4:F2}");
+                        continue;
+                    }
+                }
+                
+                // 最后使用编辑距离作为兜底（逐行检查）
+                foreach (var line in block)
+                {
+                    double score = CalculateLevenshteinRatioSimple(keywordLower, line.ToLower());
                     if (score >= threshold)
                     {
-                        // 回溯找到这个命令块的开头
-                        int currentIndex = Array.IndexOf(lines, line);
-                        for (int i = currentIndex - 1; i >= 0; i--)
-                        {
-                            if (lines[i].StartsWith("【") && lines[i].Contains("】"))
-                            {
-                                // 从命令头开始重新收集
-                                for (int j = i; j <= currentIndex; j++)
-                                {
-                                    currentBlock.Add(lines[j]);
-                                }
-                                inBlock = true;
-                                break;
-                            }
-                        }
-                        
-                        // 如果没找到命令头，直接添加当前行（兼容其他格式）
-                        if (!inBlock)
-                        {
-                            currentBlock.Add(line);
-                            inBlock = true;
-                        }
+                        matchedBlocks.Add((block, score));
+                        break;
                     }
                 }
             }
-
-            // 处理最后一个块
-            if (inBlock && currentBlock.Count > 0)
-            {
-                resultBlocks.Add(currentBlock);
-            }
-
-            if (resultBlocks.Count == 0)
+            
+            // 第三步：按分数排序
+            matchedBlocks.Sort((a, b) => b.Score.CompareTo(a.Score));
+            
+            if (matchedBlocks.Count == 0)
             {
                 return $"未找到与 '{keyword}' 相关的命令";
             }
-
-            // 合并所有匹配的块
-            var result = resultBlocks.SelectMany(b => b);
+            
+            // 第四步：返回前 topK 个结果
+            var resultBlocks = matchedBlocks.Select(b => b.Block);
             if (topK.HasValue)
             {
-                result = result.Take(topK.Value);
+                resultBlocks = resultBlocks.Take(topK.Value);
             }
-
+            
+            var result = resultBlocks.SelectMany(b => b);
             return string.Join("\n", result);
         }
 
         /// <summary>
-        /// 计算单行的相似度
+        /// 计算单行的相似度（保留用于其他场景）
         /// </summary>
         private double CalculateLineSimilarity(string keyword, string line)
         {
@@ -353,7 +404,6 @@ namespace tools
 
             // 先对用户输入进行 search 搜索，只导入相关的命令到上下文
             string searchResult = SearchCommands(userPrompt, threshold: 0.3, topK: 5);
-            Console.Write($"searchResult:{searchResult}");
             // 加载历史消息（不包含 system）
             var messages = LoadMessagesFromDisk();
             
@@ -409,7 +459,6 @@ namespace tools
         
             // 先对用户输入进行 search 搜索，获取相关命令名称
             string searchResult = SearchCommands(userPrompt, threshold: 0.3, topK: 5);
-            Console.Write($"searchResult:{searchResult}");
                     
             // 从搜索结果中提取匹配的命令名，过滤工具列表
             var filteredTools = FilterToolsBySearchResult(allTools, searchResult);

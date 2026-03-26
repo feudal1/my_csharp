@@ -24,7 +24,19 @@ namespace tools
         }
 
         /// <summary>
-        /// 标注当前打开的零件
+        /// 获取数据库实例（用于外部访问）
+        /// </summary>
+        public static TopologyDatabase? GetDatabase()
+        {
+            if (_database == null)
+            {
+                Initialize();
+            }
+            return _database;
+        }
+
+        /// <summary>
+        /// 标注当前打开的零件的所有 body
         /// </summary>
         public static void LabelCurrentPart(ModelDoc2 swModel, int wlIterations = 1)
         {
@@ -41,19 +53,15 @@ namespace tools
 
             try
             {
-                // 构建拓扑图
+                // 构建所有 body 的拓扑图
                 Console.WriteLine("\n=== 构建零件拓扑图 ===");
-                var graph = FaceGraphBuilder.BuildGraph(swModel);
+                var graphs = FaceGraphBuilder.BuildGraphs(swModel);
                 
-                if (graph == null || graph.Nodes.Count == 0)
+                if (graphs.Count == 0)
                 {
                     Console.WriteLine("× 无法构建拓扑图");
                     return;
                 }
-
-                // 执行 WL 迭代
-                Console.WriteLine($"\n=== 执行 WL 迭代 ({wlIterations} 次) ===");
-                var wlFrequencies = WLGraphKernel.PerformWLIterations(graph, wlIterations);
 
                 // 获取零件信息
                 string partName = swModel.GetTitle();
@@ -61,18 +69,21 @@ namespace tools
 
                 // 存储到数据库
                 Console.WriteLine("\n=== 存储到数据库 ===");
-                int partId = _database!.UpsertPart(partName, fullPath, wlFrequencies);
+                var bodyIds = _database!.UpsertPartWithBodies(partName, fullPath, graphs);
 
-                // 显示现有标注
-                var existingLabels = _database.GetPartLabels(partId);
-                if (existingLabels.Count > 0)
+                // 显示每个 body 的现有标注
+                foreach (var (bodyId, graph) in bodyIds.Zip(graphs, (id, g) => (id, g)))
                 {
-                    Console.WriteLine("\n=== 现有标注 ===");
-                    foreach (var labelCategory in existingLabels)
+                    var existingLabels = _database.GetBodyLabels(bodyId);
+                    if (existingLabels.Count > 0)
                     {
-                        foreach (var (value, confidence, notes) in labelCategory.Value)
+                        Console.WriteLine($"\n=== Body [{graph.BodyName}] 现有标注 ===");
+                        foreach (var labelCategory in existingLabels)
                         {
-                            Console.WriteLine($"  {labelCategory.Key}: {value} (置信度：{confidence}) - {notes}");
+                            foreach (var (value, confidence, notes) in labelCategory.Value)
+                            {
+                                Console.WriteLine($"  {labelCategory.Key}: {value} (置信度：{confidence}) - {notes}");
+                            }
                         }
                     }
                 }
@@ -95,6 +106,7 @@ namespace tools
 
                 // 提示用户输入新标注
                 Console.WriteLine("\n=== 添加标注 ===");
+                Console.WriteLine("请输入要标注的 body 索引（0-{0}）或直接按回车跳过", graphs.Count - 1);
                 
                 // 只标注一个类别
                 Console.Write("标注类别 > ");
@@ -102,9 +114,18 @@ namespace tools
                                     
                 if (!string.IsNullOrEmpty(category))
                 {
-                    // 添加标注（值设为空）
-                    _database!.AddLabel(partId, category!, value: "", confidence: 1.0, notes: "");
-                    Console.WriteLine($"✓ 标注已添加：{category}");
+                    Console.Write("Body 索引 > ");
+                    if (int.TryParse(Console.ReadLine(), out int bodyIndex) && bodyIndex >= 0 && bodyIndex < graphs.Count)
+                    {
+                        int targetBodyId = bodyIds[bodyIndex];
+                        // 添加标注（值设为空）
+                        _database!.AddLabel(targetBodyId, category!, value: "", confidence: 1.0, notes: "");
+                        Console.WriteLine($"✓ 标注已添加：{category} (Body: {graphs[bodyIndex].BodyName})");
+                    }
+                    else
+                    {
+                        Console.WriteLine("× 无效的 body 索引");
+                    }
                 }
                 else
                 {
@@ -122,7 +143,7 @@ namespace tools
         }
 
         /// <summary>
-        /// 查看所有已标注的零件
+        /// 查看所有已标注的 body
         /// </summary>
         public static void ViewAllParts()
         {
@@ -131,19 +152,19 @@ namespace tools
                 Initialize();
             }
 
-            var parts = _database?.GetAllPartsWithLabels();
+            var bodies = _database?.GetAllBodiesWithLabels();
             
-            if (parts == null || parts.Count == 0)
+            if (bodies == null || bodies.Count == 0)
             {
                 Console.WriteLine("数据库中暂无零件");
                 return;
             }
 
-            Console.WriteLine($"\n=== 已标注零件 ({parts.Count} 个) ===\n");
+            Console.WriteLine($"\n=== 已标注 Body ({bodies.Count} 个) ===\n");
             
-            foreach (var (partId, partName, labels) in parts)
+            foreach (var (partId, partName, bodyId, bodyName, labels) in bodies)
             {
-                Console.WriteLine($"[{partId}] {partName}");
+                Console.WriteLine($"[{partId}] {partName} / Body: {bodyName}");
                 
                 if (labels.Count > 0)
                 {
@@ -158,7 +179,7 @@ namespace tools
         }
 
         /// <summary>
-        /// 按标注类别搜索零件
+        /// 按标注类别搜索 body
         /// </summary>
         public static void SearchByCategory(string category, string? value = null)
         {
@@ -171,15 +192,15 @@ namespace tools
             
             if (results == null || results.Count == 0)
             {
-                Console.WriteLine($"未找到符合条件的零件");
+                Console.WriteLine($"未找到符合条件的 body");
                 return;
             }
 
             Console.WriteLine($"\n=== 搜索结果：{category}" + (value != null ? $" = {value}" : "") + " ===\n");
             
-            foreach (var (partId, partName, labelValue) in results)
+            foreach (var (partId, partName, bodyId, bodyName, labelValue) in results)
             {
-                Console.WriteLine($"[{partId}] {partName} => {labelValue}");
+                Console.WriteLine($"[{partId}] {partName} / Body:{bodyName} => {labelValue}");
             }
         }
 
@@ -197,10 +218,11 @@ namespace tools
             
             if (stats == null) return;
             
-            var (partCount, labelCount, categoryStats) = stats.Value;
+            var (partCount, bodyCount, labelCount, categoryStats) = stats.Value;
             
             Console.WriteLine($"\n=== 数据库统计 ===");
             Console.WriteLine($"零件总数：{partCount}");
+            Console.WriteLine($"Body 总数：{bodyCount}");
             Console.WriteLine($"标注总数：{labelCount}");
             Console.WriteLine("标注类别分布:");
             
@@ -305,14 +327,13 @@ namespace tools
                 try
                 {
                     // 自动计算并存储 WL 特征
-                    var graph = FaceGraphBuilder.BuildGraph(model);
-                    if (graph != null && graph.Nodes.Count > 0)
+                    var graphs = FaceGraphBuilder.BuildGraphs(model);
+                    if (graphs.Count > 0)
                     {
-                        var wlFrequencies = WLGraphKernel.PerformWLIterations(graph, 1);
                         string partName = model.GetTitle();
                         
-                        int partId = _database!.UpsertPart(partName, filePath, wlFrequencies);
-                        Console.WriteLine($"✓ 已存储：{partName} ({graph.Nodes.Count} 个面)");
+                        var bodyIds = _database!.UpsertPartWithBodies(partName, filePath, graphs);
+                        Console.WriteLine($"✓ 已存储：{partName} ({graphs.Count} 个 body, 总面数：{graphs.Sum(g => g.Nodes.Count)})");
                     }
                     else
                     {
@@ -333,7 +354,7 @@ namespace tools
             Console.WriteLine("\n=== 批量处理完成 ===");
             ShowStatistics();
             
-            Console.WriteLine("\n提示：使用 'view_parts' 命令查看已标注的零件，然后手动添加标注");
+            Console.WriteLine("\n提示：使用 'view_parts' 命令查看已标注的 body，然后手动添加标注");
         }
 
         /// <summary>
@@ -354,33 +375,55 @@ namespace tools
 
             try
             {
-                // 构建拓扑图
+                // 构建所有 body 的拓扑图
                 Console.WriteLine("\n=== 构建零件拓扑图 ===");
-                var graph = FaceGraphBuilder.BuildGraph(swModel);
+                var graphs = FaceGraphBuilder.BuildGraphs(swModel);
                 
-                if (graph == null || graph.Nodes.Count == 0)
+                if (graphs.Count == 0)
                 {
                     Console.WriteLine("× 无法构建拓扑图");
                     return;
                 }
 
-                // 执行 WL 迭代
+                // 合并所有 body 的 WL 频率（简单叠加）
                 Console.WriteLine($"\n=== 执行 WL 迭代 ({wlIterations} 次) ===");
-                var wlFrequencies = WLGraphKernel.PerformWLIterations(graph, wlIterations);
+                var combinedFrequencies = new List<Dictionary<string, int>>();
+                
+                foreach (var graph in graphs)
+                {
+                    var wlFreq = WLGraphKernel.PerformWLIterations(graph, wlIterations);
+                    if (combinedFrequencies.Count == 0)
+                    {
+                        combinedFrequencies = wlFreq;
+                    }
+                    else
+                    {
+                        // 合并频率
+                        for (int i = 0; i < wlFreq.Count; i++)
+                        {
+                            foreach (var kvp in wlFreq[i])
+                            {
+                                if (!combinedFrequencies[i].ContainsKey(kvp.Key))
+                                    combinedFrequencies[i][kvp.Key] = 0;
+                                combinedFrequencies[i][kvp.Key] += kvp.Value;
+                            }
+                        }
+                    }
+                }
 
                 // 查找相似类别
                 Console.WriteLine("\n=== 查找推荐类别 ===");
-                var recommendations = _database!.FindTopCategoriesByWLTags(wlFrequencies, topK: topK);
+                var recommendations = _database!.FindTopCategoriesByWLTags(combinedFrequencies, topK: topK);
 
                 if (recommendations.Count == 0)
                 {
-                    Console.WriteLine("未找到相似的已标注零件");
+                    Console.WriteLine("未找到相似的已标注 body");
                     return;
                 }
 
-                Console.WriteLine($"\n{'='*60}");
+                Console.WriteLine($"\n{'=',60}");
                 Console.WriteLine("TOP-{0} 推荐类别", topK);
-                Console.WriteLine($"{'='*60}");
+                Console.WriteLine($"{'=',60}");
                 
                 for (int i = 0; i < recommendations.Count; i++)
                 {
@@ -392,14 +435,10 @@ namespace tools
                     Console.WriteLine();
                 }
 
-                Console.WriteLine($"{'='*60}\n");
+                Console.WriteLine($"{'=',60}\n");
                 
-                // 显示详细信息
-                Console.WriteLine("按 Enter 查看详细匹配结果...");
-                if (Console.ReadKey().Key == ConsoleKey.Enter)
-                {
-                    ViewDetailedMatches(wlFrequencies, topK: 10);
-                }
+                // 自动显示详细匹配结果
+                ViewDetailedMatches(combinedFrequencies, topK: topK);
             }
             catch (Exception ex)
             {
@@ -421,14 +460,14 @@ namespace tools
                 return;
             }
 
-            Console.WriteLine($"\n{'='*80}");
+            Console.WriteLine($"\n{'=',80}");
             Console.WriteLine("详细匹配结果");
-            Console.WriteLine($"{'='*80}\n");
+            Console.WriteLine($"{'=',80}\n");
 
             for (int i = 0; i < detailedResults.Count; i++)
             {
-                var (category, partName, similarity, confidence, notes) = detailedResults[i];
-                Console.WriteLine($"[{i + 1}] 零件：{partName}");
+                var (category, partName, bodyName, similarity, confidence, notes) = detailedResults[i];
+                Console.WriteLine($"[{i + 1}] 零件：{partName} / Body: {bodyName}");
                 Console.WriteLine($"    类别：{category}");
                 Console.WriteLine($"    相似度：{similarity:F3} ({similarity * 100:F1}%)");
                 Console.WriteLine($"    置信度：{confidence:F2}");
@@ -439,7 +478,7 @@ namespace tools
                 Console.WriteLine();
             }
 
-            Console.WriteLine($"{'='*80}\n");
+            Console.WriteLine($"{'=',80}\n");
         }
     }
 }

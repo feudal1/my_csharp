@@ -14,10 +14,10 @@ namespace tools
         /// <summary>
         /// 执行 WL 迭代，更新节点标签
         /// </summary>
-        /// <param name="graph">零件图</param>
+        /// <param name="graph">零件图或 Body 图</param>
         /// <param name="iterations">迭代次数</param>
         /// <returns>每次迭代后的标签频率列表</returns>
-        public static List<Dictionary<string, int>> PerformWLIterations(PartGraph graph, int iterations = 1)
+        public static List<Dictionary<string, int>> PerformWLIterations(BodyGraph graph, int iterations = 1)
         {
             var labelFrequenciesPerIter = new List<Dictionary<string, int>>();
             
@@ -37,7 +37,7 @@ namespace tools
             var initialFreq = CountLabelFrequencies(graph);
             labelFrequenciesPerIter.Add(initialFreq);
 
-            Console.WriteLine($"  迭代 0: {initialFreq.Count} 种标签");
+            Console.WriteLine($"  Body [{graph.BodyName}] 迭代 0: {initialFreq.Count} 种标签");
 
             // 执行 WL 迭代
             for (int iter = 1; iter <= iterations; iter++)
@@ -68,7 +68,7 @@ namespace tools
                 var freq = CountLabelFrequencies(graph);
                 labelFrequenciesPerIter.Add(freq);
                 
-                Console.WriteLine($"  迭代 {iter}: {freq.Count} 种标签");
+                Console.WriteLine($"  Body [{graph.BodyName}] 迭代 {iter}: {freq.Count} 种标签");
             }
 
             return labelFrequenciesPerIter;
@@ -110,7 +110,7 @@ namespace tools
         /// <summary>
         /// 统计图中各标签的出现频率
         /// </summary>
-        private static Dictionary<string, int> CountLabelFrequencies(PartGraph graph)
+        private static Dictionary<string, int> CountLabelFrequencies(BodyGraph graph)
         {
             var frequency = new Dictionary<string, int>();
             
@@ -206,24 +206,24 @@ namespace tools
         }
 
         /// <summary>
-        /// 批量计算多个零件之间的相似度矩阵
+        /// 批量计算多个 body 之间的相似度矩阵
         /// </summary>
         public static double[,] ComputeSimilarityMatrix(
-            List<PartGraph> graphs,
+            List<BodyGraph> graphs,
             int wlIterations = 1,
             double decayFactor = 0.5)
         {
             int n = graphs.Count;
             double[,] similarityMatrix = new double[n, n];
 
-            Console.WriteLine($"\n开始计算 {n} 个零件的相似度矩阵...");
+            Console.WriteLine($"\n开始计算 {n} 个 body 的相似度矩阵...");
 
-            // 预先计算每个零件的 WL 迭代结果
+            // 预先计算每个 body 的 WL 迭代结果
             var allFrequencies = new List<List<Dictionary<string, int>>>();
             
             for (int i = 0; i < n; i++)
             {
-                Console.WriteLine($"\n处理零件 [{i + 1}/{n}]: {graphs[i].PartName}");
+                Console.WriteLine($"\n处理 Body [{i + 1}/{n}]: {graphs[i].PartName}/{graphs[i].BodyName}");
                 var freqList = PerformWLIterations(graphs[i], wlIterations);
                 allFrequencies.Add(freqList);
             }
@@ -251,7 +251,7 @@ namespace tools
             }
 
             // 打印相似度矩阵
-            PrintSimilarityMatrix(similarityMatrix, graphs.Select(g => g.PartName).ToList());
+            PrintSimilarityMatrix(similarityMatrix, graphs.Select(g => $"{g.PartName}/{g.BodyName}").ToList());
 
             return similarityMatrix;
         }

@@ -52,23 +52,28 @@ namespace tools
             Console.WriteLine("=== 快速标注模式 ===\n");
             
             // 自动计算 WL 特征并存储
-            var graph = FaceGraphBuilder.BuildGraph(swModel);
-            if (graph == null || graph.Nodes.Count == 0)
+            var graphs = FaceGraphBuilder.BuildGraphs(swModel);
+            if (graphs == null || graphs.Count == 0)
             {
                 Console.WriteLine("× 无法构建拓扑图");
                 return;
             }
 
+            // 使用第一个 body 的图
+            var graph = graphs[0];
             var wlFrequencies = WLGraphKernel.PerformWLIterations(graph, 1);
             
             string partName = swModel.GetTitle();
             string fullPath = swModel.GetPathName();
             
             var db = new TopologyDatabase();
-            int partId = db.UpsertPart(partName, fullPath, wlFrequencies);
             
-            Console.WriteLine($"\n✓ 零件已存储 (ID: {partId})");
-            Console.WriteLine($"提示：使用 'label_view {partId}' 添加标注");
+            // 使用第一个 body 的图
+            var bodyGraphs = new List<BodyGraph> { graph };
+            var bodyIds = db.UpsertPartWithBodies(partName, fullPath, bodyGraphs);
+            
+            Console.WriteLine($"\n✓ 零件已存储 (Body IDs: {string.Join(", ", bodyIds)})");
+            Console.WriteLine($"提示：使用 'label_view_body {bodyIds[0]}' 添加标注");
         }
 
         /// <summary>

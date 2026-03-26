@@ -1,0 +1,200 @@
+﻿=== SolidWorks 自动化命令列表 ===
+更新时间：2026-03-26 17:52:21
+3. 执行前需用户确认 (y/n/auto)
+
+
+【solidworks】add_name2info 
+    说明：添加零件名称到自定义属性
+    参数：无
+
+【solidworks】asm2bom 
+    说明：装配体导出 bom
+    参数：无
+
+【solidworks】asm2check 
+    说明：装配体批量检查展开
+    参数：无
+
+【solidworks】asm2drw 
+    说明：装配体批量生成工程图
+    参数：无
+
+【solidworks】asm2export 
+    说明：装配体批量导出 dwg
+    参数：无
+
+【solidworks】asm2step 
+    说明：装配体导出为 STEP 格式
+    参数：无
+
+【solidworks】close_current_doc 
+    说明：关闭当前文档
+    参数：无
+
+【train】delete_part 
+    说明：删除零件 ID 为 x 的所有数据（包括 WL 结果和标注）
+    参数：[零件 ID]
+
+【solidworks】drw2dwg 
+    说明：将工程图转换为 DWG 格式
+    参数：无
+
+【solidworks】drw2png 
+    说明：将工程图转换为 NPG 格式
+    参数：无
+
+【solidworks】drw2png2vlm (异步)
+    说明：导出工程图为 PNG 并调用 VLM 分析
+    参数：无
+
+【cad】dxf2dwg 
+    说明：DXF 转换为 DWG 格式
+    参数：<DXF 文件路径>
+
+【solidworks】export 
+    说明：导出当前零件展开为 DWG 文件
+    参数：无
+
+【solidworks】export_flat_view 
+    说明：导出钣金展开视图 dwg
+    参数：无
+
+【solidworks】export2 
+    说明：导出当前零件展开为 DWG 文件（版本 2）
+    参数：无
+
+【train】find_category 
+    说明：查询当前零件的推荐类别（基于 WL 图核相似度匹配）
+    参数：[可选的：迭代次数，默认 1] [可选的：返回数量，默认 5]
+
+【cad】folder_with_subfolders_draw_divider 
+    说明：遍历（子）文件夹：合并 DWG 并绘制边界框
+    参数：无
+
+【cad】folder2dwg 
+    说明：批量转换文件夹内 DXF 为 DWG
+    参数：无
+
+【cad】folder2dxf 
+    说明：批量转换文件夹内 DXF 为 DWG
+    参数：无
+
+【cad】folder2merge 
+    说明：批量合并文件夹内 DWG 文件（水平排列，间距 10）
+    参数：无
+
+【solidworks】folder2step 
+    说明：文件夹内零件装配体导出为 STEP 格式
+    参数：无
+
+【solidworks】folderdrw2dwg 
+    说明：批量转换文件夹内工程图为 DWG 格式
+    参数：无
+
+【cad】get_all_dim_style 
+    说明：获取所有标注样式并添加 UUID4 后缀
+    参数：无
+
+【solidworks】get_all_part_name 
+    说明：获得所有零件名称 - 遍历当前装配体中的所有零部件，返回完整的文件路径列表（包含出现次数统计）
+    参数：无
+
+【solidworks】get_all_typename 
+    说明：获取所有零件名称
+    参数：无
+
+【solidworks】get_all_visable_edge 
+    说明：获取工程图中所有可见边线
+    参数：无
+
+【solidworks】get_current_doc_name 
+    说明：获取当前文档名称
+    参数：无
+
+【solidworks】get_select_part_name 
+    说明：获取选中零件的名称
+    参数：需先选择零件
+
+【solidworks】get_select_type 
+    说明：导出当前零件展开为 DWG 文件
+    参数：无
+
+【solidworks】get_thickness 
+    说明：获取零件厚度
+    参数：无
+
+【solidworks】get_thickness_from_solidfolder 
+    说明：从实体文件夹获取厚度
+    参数：无
+
+【train】label 
+    说明：标注当前零件的拓扑图。用法：label [body 名称] [值] - 精确匹配 body 名称并标注。示例：label 凸台拉伸 1 管件、label 法兰盘 钣金件
+    参数：[body 名称] [值]
+
+【train】label_all 
+    说明：标注当前零件的所有 body 为同一个标注。用法：label_all [值] - 无需指定 body 名称，将所有 body 标注为同一类别。示例：label_all 管件、label_all 钣金件、标注当前文件为 xx 也用此方法
+    参数：[值]
+
+【train】label_batch 
+    说明：批量标注文件夹中的所有零件
+    参数：[文件夹路径]
+
+【train】label_delete 
+    说明：删除指定的标注 (删除零件 id 为 x 的数据)
+    参数：[标注 ID]
+
+【train】label_export 
+    说明：导出零件的 WL 结果为 JSON
+    参数：[零件 ID]
+
+【train】label_quick 
+    说明：快速标注当前零件（仅计算存储，不立即标注）
+    参数：无
+
+【train】label_search 
+    说明：按标注类别搜索零件
+    参数：[类别名称] [可选的值]
+
+【train】label_stats 
+    说明：显示数据库统计信息，打印一下数据库所有数据
+    参数：无
+
+【cad】merge_dwg 
+    说明：合并多个 DWG 文件
+    参数：<DWG 文件路径>
+
+【solidworks】new_drw 
+    说明：新建工程图
+    参数：无
+
+【cad】open_cad_doc_by_name 
+    说明：按名称打开 CAD 文档
+    参数：<文档名称>
+
+【solidworks】open_doc_folder 
+    说明：打开零件所在文件夹
+    参数：无
+
+【solidworks】open_part_by_name 
+    说明：按名称打开零件
+    参数：<零件名称>
+
+【solidworks】plan1 
+    说明：综合计划：添加名称 + 获取厚度 + 导出 dwg + 生成工程图
+    参数：无
+
+【solidworks】select_part_by_name 
+    说明：按名称选择零件
+    参数：零件名称
+
+【solidworks】unsuppress 
+    说明：解除压缩特征或零部件
+    参数：无
+
+【train】view_categories 
+    说明：查看数据库中所有的标注类别
+    参数：无
+
+【train】view_parts 
+    说明：查看所有已标注的零件
+    参数：无

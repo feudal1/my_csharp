@@ -14,6 +14,16 @@ using tools;
 
 namespace tools
 {
+    // Windows API 用于设置控制台代码页
+    class ConsoleHelper
+    {
+        [DllImport("kernel32.dll")]
+        public static extern bool SetConsoleCP(uint wCodePageID);
+
+        [DllImport("kernel32.dll")]
+        public static extern bool SetConsoleOutputCP(uint wCodePageID);
+    }
+    
     // 性能监控装饰器属性
     [System.AttributeUsage(System.AttributeTargets.Method)]
     class ProfiledAttribute : System.Attribute
@@ -33,18 +43,22 @@ namespace tools
         public static ModelDoc2? SwModel => swModel;
         
         static Dictionary<string, CommandInfo>? commandInfos;
+               static private DateTime GetBuildTime()
+        {
+            Assembly assembly = Assembly.GetExecutingAssembly();
+            string filePath = assembly.Location;
+            return new FileInfo(filePath).LastWriteTime;
+        }
         
         [STAThread]
         static void Main(string[] args)
         {
-            // 设置控制台编码为 UTF-8，确保中文字符正常显示
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
-            
+            Console.WriteLine($"ctools build time: {GetBuildTime():MM-dd HH:mm}");
             RegisterCommands();
             
-            // 将 ctool 的命令注册到全局命令注册中心
-            CommandRegistry.Instance.RegisterAssembly(typeof(Program).Assembly);
-            
+                // 将 ctool 的命令注册到全局命令注册中心
+                CommandRegistry.Instance.RegisterAssembly(typeof(Program).Assembly);
+                
             if (args.Length==0)
             {
                 // 连接 SolidWorks
@@ -75,92 +89,23 @@ namespace tools
                 var task = Task.Run(() => loopCaller.InteractiveLoopAsync());
                 task.GetAwaiter().GetResult();
             }
-
-            // 仅导出命令信息时，不需要连接 SolidWorks（否则在未启动 SW 时会直接失败）
-            if (args.Length > 0)
+            else
             {
-                string command = args[0];
-                
-                // 支持通过命令行直接执行命令
-                if (command != "--search" && command != "search" && command != "s")
-                {
-                    // 连接 SolidWorks
-                    swApp = Connect.run();
-                    if (swApp == null)
-                    {
-                        Console.WriteLine("错误：无法连接到 SolidWorks 应用程序。");
-                        ShowHelp();
-                        return;
-                    }
-
-                    swModel = (ModelDoc2)swApp.ActiveDoc;
-                    
-                    // 初始化全局 SolidWorks 上下文
-                    SwContext.Instance.Initialize(swApp, swModel);
-                    
-                    // 尝试从全局注册中心查找并执行命令
-                    var cmdInfo = CommandRegistry.Instance.GetCommand(command);
-                    if (cmdInfo != null)
-                    {
-                        Console.WriteLine($">>> 正在执行命令：{command}...\n");
-                        try
-                        {
-                            cmdInfo.ExecuteAsync(args).GetAwaiter().GetResult();
-                            Console.WriteLine("\n>>> 命令执行结束。");
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"\n❌ 命令执行失败：{ex.Message}");
-                        }
-                    }
-                    else if (asyncCommands != null && asyncCommands.ContainsKey(command))
-                    {
-                        Console.WriteLine($">>> 正在执行命令：{command}...\n");
-                        
-                        // 根据命令类型选择执行方式
-                        var localCmdInfo = commandInfos![command];
-                        
-                        if (localCmdInfo.CommandType == CommandType.Async)
-                        {
-                            var task = Task.Run(() => asyncCommands[command](args));
-                            task.GetAwaiter().GetResult();
-                        }
-                        else
-                        {
-                            asyncCommands[command](args).GetAwaiter().GetResult();
-                        }
-                        
-                        Console.WriteLine("\n>>> 命令执行结束。");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"没这命令：{command}");
-                        ShowHelp();
-                    }
-                    return;
-                }
-                
-                if (command == "--search" || command == "search" || command == "s")
-                {
-                    string keyword = args.Length > 1 ? args[1] : "";
-                    double threshold = 0.3;
-                    int? topK = null;
-                    
-                    if (args.Length > 2 && double.TryParse(args[2], out double t))
-                    {
-                        threshold = t;
-                    }
-                    
-                    if (args.Length > 3 && int.TryParse(args[3], out int k))
-                    {
-                        topK = k;
-                    }
-                    
-                    SearchCommands(keyword, threshold, topK);
-                    return;
-                }
+                // 如果有命令行参数，显示帮助信息
+                Console.WriteLine("\n欢迎使用 ctools - SolidWorks 智能助手");
+                Console.WriteLine("\n使用方法:");
+                Console.WriteLine("  ctool.exe                  - 启动交互式对话模式");
+                Console.WriteLine("\n在对话中你可以:");
+                Console.WriteLine("  - 直接输入命令名称执行 (如 exportdxf)");
+                Console.WriteLine("  - 用自然语言描述需求 (AI 会自动识别并调用命令)");
+                Console.WriteLine("  - 输入 clear 清空历史、history 查看历史、mode 切换模式");
+                Console.WriteLine("  - 输入 llm 进入纯对话模式、quit/exit 退出程序");
+                Console.WriteLine("\n示例:");
+                Console.WriteLine("  > exportdxf              # 直接执行导出 DXF 命令");
+                Console.WriteLine("  > 导出当前零件           # AI 会识别意图并调用相应命令");
+                Console.WriteLine("\n");
+                ShowHelp();
             }
-    
         }
         
         /// <summary>
@@ -171,9 +116,7 @@ namespace tools
             var sb = new StringBuilder();
             sb.AppendLine("=== SolidWorks 自动化命令列表 ===");
             sb.AppendLine($"更新时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            sb.AppendLine("\n***命令格式说明:***");
-            sb.AppendLine("1. 无参数命令：直接输入 do_【命令名】");
-            sb.AppendLine("2. 有参数命令：do_【命令名】参数值");
+
             sb.AppendLine("3. 执行前需用户确认 (y/n/auto)\n");
             
             if (commandInfos != null)

@@ -41,37 +41,14 @@ namespace tools
                 string commandName = commandText;
                 string[] args = new string[0];
 
-                // 检查是否包含 do_【】格式
-                var strictPattern = new System.Text.RegularExpressions.Regex(@"do_【([^】]+)】\s*(.*)");
-                var strictMatch = strictPattern.Match(commandText);
-                
-                if (strictMatch.Success)
+                // 普通格式：命令名 参数 1 参数 2
+                var parts = commandText.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0)
                 {
-                    // 严格格式：do_【命令名】参数
-                    commandName = strictMatch.Groups[1].Value.Trim();
-                    string parameters = strictMatch.Groups[2].Value.Trim();
-                    
-                    // 只有当参数字符串非空时才解析参数
-                    if (!string.IsNullOrEmpty(parameters))
-                    {
-                        args = parameters.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                    }
-                    else
-                    {
-                        args = new string[0];
-                    }
+                    return "错误：无法解析命令";
                 }
-                else
-                {
-                    // 普通格式：命令名 参数 1 参数 2
-                    var parts = commandText.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length == 0)
-                    {
-                        return "错误：无法解析命令";
-                    }
-                    commandName = parts[0];
-                    args = parts.Length > 1 ? parts.Skip(1).ToArray() : new string[0];
-                }
+                commandName = parts[0];
+                args = parts.Length > 1 ? parts.Skip(1).ToArray() : new string[0];
 
                 // 检查命令是否存在
                 var commandInfo = _commandResolver(commandName);

@@ -7,17 +7,17 @@ using SolidWorks.Interop.swconst;
 namespace tools
 {
     /// <summary>
-    /// WL 图核算法中的面图节点
+    /// WL 图核算法中的面节点
     /// </summary>
     public class FaceNode
     {
         public int Id { get; set; }                      // 节点索引
-        public Face2 FaceObject { get; set; }            // 面对象引用
-        public string FaceType { get; set; }             // 面类型标签
+        public Face2 FaceObject { get; set; } = null!;   // 面对象引用
+        public string FaceType { get; set; } = "";       // 面类型标签
         public double Area { get; set; }                 // 面积
         public List<int> NeighborIds { get; set; }       // 邻居节点索引列表
-        public string CurrentLabel { get; set; }         // 当前迭代标签
-        
+        public string CurrentLabel { get; set; } = "";   // 当前迭代标签
+            
         public FaceNode()
         {
             NeighborIds = new List<int>();
@@ -25,15 +25,16 @@ namespace tools
     }
 
     /// <summary>
-    /// 零件的面邻接图表征
+    /// Body 的拓扑图表征
     /// </summary>
-    public class PartGraph
+    public class BodyGraph
     {
-        public string PartName { get; set; }             // 零件名称
+        public string PartName { get; set; } = "";       // 零件名称
+        public string BodyName { get; set; } = "";       // Body 名称
         public List<FaceNode> Nodes { get; set; }        // 节点列表
         public Dictionary<string, int> LabelFrequency { get; set; }  // 标签频率统计
         
-        public PartGraph()
+        public BodyGraph()
         {
             Nodes = new List<FaceNode>();
             LabelFrequency = new Dictionary<string, int>();
@@ -46,25 +47,18 @@ namespace tools
     public static class FaceGraphBuilder
     {
         /// <summary>
-        /// 从零件文档构建面邻接图
+        /// 从零件文档构建所有 Body 的图列表
         /// </summary>
-        public static PartGraph BuildGraph(ModelDoc2 swModel)
+        public static List<BodyGraph> BuildGraphs(ModelDoc2 swModel)
         {
             if (swModel == null)
             {
                 Console.WriteLine("错误：没有打开的活动文档。");
-                return null;
+                return new List<BodyGraph>();
             }
 
             PartDoc partDoc = (PartDoc)swModel;
-            PartGraph graph = new PartGraph();
-            graph.PartName = swModel.GetTitle() ;
-
-            // 存储邻接关系的字典：面索引 -> 邻居面索引集合
-            var adjacencyDict = new Dictionary<int, HashSet<int>>();
-            var faceIndexMap = new Dictionary<Face2, int>();
-            var facesList = new List<Face2>();
-            int faceCount = 0;
+            var graphs = new List<BodyGraph>();
 
             // 获取所有实体
             object[] vBodies = (object[])partDoc.GetBodies2((int)swBodyType_e.swSolidBody, false);
@@ -72,50 +66,89 @@ namespace tools
             if (vBodies == null || vBodies.Length == 0)
             {
                 Console.WriteLine("警告：未找到实体 body");
+                return graphs;
+            }
+
+            Console.WriteLine($"找到 {vBodies.Length} 个 body");
+
+            // 为每个 body 构建独立的图
+            foreach (Body2 body in vBodies)
+            {
+                try
+                {
+                    var graph = BuildSingleBodyGraph(swModel, body);
+                    if (graph != null && graph.Nodes.Count > 0)
+                    {
+                        graphs.Add(graph);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"构建 body 图失败：{ex.Message}");
+                }
+            }
+
+            Console.WriteLine($"成功构建 {graphs.Count} 个 body 的拓扑图");
+            return graphs;
+        }
+
+        /// <summary>
+        /// 从单个 body 构建图
+        /// </summary>
+        private static BodyGraph BuildSingleBodyGraph(ModelDoc2 swModel, Body2 body)
+        {
+            BodyGraph graph = new BodyGraph();
+            graph.PartName = swModel.GetTitle();
+            graph.BodyName = body.Name;  // 使用 body 的名称
+
+            // 存储邻接关系的字典：面索引 -> 邻居面索引集合
+            var adjacencyDict = new Dictionary<int, HashSet<int>>();
+            var faceIndexMap = new Dictionary<Face2, int>();
+            var facesList = new List<Face2>();
+            int faceCount = 0;
+
+            object[] vEdges = (object[])body.GetEdges();
+            if (vEdges == null)
+            {
+                Console.WriteLine($"  Body [{graph.BodyName}] 没有边");
                 return graph;
             }
 
-            // 遍历所有 body，提取面和邻接关系
-            foreach (Body2 body in vBodies)
+            // 遍历边，提取面和邻接关系
+            foreach (Edge edge in vEdges)
             {
-                object[] vEdges = (object[])body.GetEdges();
-                if (vEdges == null) continue;
+                var twoAdjacentFaces = (object[])edge.GetTwoAdjacentFaces();
+                if (twoAdjacentFaces == null || twoAdjacentFaces.Length < 2) continue;
 
-                foreach (Edge edge in vEdges)
+                Face2 face1 = (Face2)twoAdjacentFaces[0];
+                Face2 face2 = (Face2)twoAdjacentFaces[1];
+
+                // 为每个面分配唯一索引
+                if (!faceIndexMap.ContainsKey(face1))
                 {
-                    var twoAdjacentFaces = (object[])edge.GetTwoAdjacentFaces();
-                    if (twoAdjacentFaces == null || twoAdjacentFaces.Length < 2) continue;
-
-                    Face2 face1 = (Face2)twoAdjacentFaces[0];
-                    Face2 face2 = (Face2)twoAdjacentFaces[1];
-
-                    // 为每个面分配唯一索引
-                    if (!faceIndexMap.ContainsKey(face1))
-                    {
-                        faceIndexMap[face1] = faceCount++;
-                        facesList.Add(face1);
-                    }
-
-                    if (!faceIndexMap.ContainsKey(face2))
-                    {
-                        faceIndexMap[face2] = faceCount++;
-                        facesList.Add(face2);
-                    }
-
-                    int index1 = faceIndexMap[face1];
-                    int index2 = faceIndexMap[face2];
-
-                    // 初始化邻接矩阵条目
-                    if (!adjacencyDict.ContainsKey(index1))
-                        adjacencyDict[index1] = new HashSet<int>();
-
-                    if (!adjacencyDict.ContainsKey(index2))
-                        adjacencyDict[index2] = new HashSet<int>();
-
-                    // 添加邻接关系
-                    adjacencyDict[index1].Add(index2);
-                    adjacencyDict[index2].Add(index1);
+                    faceIndexMap[face1] = faceCount++;
+                    facesList.Add(face1);
                 }
+
+                if (!faceIndexMap.ContainsKey(face2))
+                {
+                    faceIndexMap[face2] = faceCount++;
+                    facesList.Add(face2);
+                }
+
+                int index1 = faceIndexMap[face1];
+                int index2 = faceIndexMap[face2];
+
+                // 初始化邻接矩阵条目
+                if (!adjacencyDict.ContainsKey(index1))
+                    adjacencyDict[index1] = new HashSet<int>();
+
+                if (!adjacencyDict.ContainsKey(index2))
+                    adjacencyDict[index2] = new HashSet<int>();
+
+                // 添加邻接关系
+                adjacencyDict[index1].Add(index2);
+                adjacencyDict[index2].Add(index1);
             }
 
             // 创建节点并分配初始标签
@@ -145,7 +178,7 @@ namespace tools
                 graph.Nodes.Add(node);
             }
 
-            Console.WriteLine($"零件 [{graph.PartName}] 构建完成：{faceCount} 个面");
+            Console.WriteLine($"  ✓ Body [{graph.BodyName}] 构建完成：{graph.Nodes.Count} 个面");
             return graph;
         }
 

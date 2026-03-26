@@ -49,14 +49,16 @@ namespace examples
                 
                 // 步骤 2：构建零件拓扑图
                 Console.WriteLine("正在构建拓扑图...");
-                var graph = FaceGraphBuilder.BuildGraph(model);
+                var graphs = FaceGraphBuilder.BuildGraphs(model);
                 
-                if (graph == null || graph.Nodes.Count == 0)
+                if (graphs == null || graphs.Count == 0)
                 {
                     Console.WriteLine("无法构建拓扑图！");
                     return;
                 }
                 
+                // 使用第一个 body 的图
+                var graph = graphs[0];
                 Console.WriteLine($"✓ 拓扑图已构建（{graph.Nodes.Count} 个面）");
                 
                 // 步骤 3：执行 WL 迭代，获取标签频率
@@ -121,13 +123,15 @@ namespace examples
                 var database = new TopologyDatabase("topology_labels.db");
                 
                 // 构建拓扑图并执行 WL 迭代
-                var graph = FaceGraphBuilder.BuildGraph(model);
-                if (graph == null)
+                var graphs = FaceGraphBuilder.BuildGraphs(model);
+                if (graphs == null || graphs.Count == 0)
                 {
                     Console.WriteLine("无法构建拓扑图！");
                     return;
                 }
                 
+                // 使用第一个 body 的图
+                var graph = graphs[0];
                 var wlFrequencies = WLGraphKernel.PerformWLIterations(graph, iterations: 1);
                 
                 // 获取详细匹配结果（返回具体零件和类别）
@@ -150,10 +154,10 @@ namespace examples
                 
                 for (int i = 0; i < detailedResults.Count; i++)
                 {
-                    var (category, partName, similarity, confidence, notes) = detailedResults[i];
+                    var (category, partName, bodyName, similarity, confidence, notes) = detailedResults[i];
                     
                     Console.WriteLine($"匹配 {i + 1}:");
-                    Console.WriteLine($"  零件名称：{partName}");
+                    Console.WriteLine($"  零件名称：{partName}/{bodyName}");
                     Console.WriteLine($"  类    别：{category}");
                     Console.WriteLine($"  相 似 度：{similarity:F4} ({similarity * 100:F2}%)");
                     Console.WriteLine($"  置 信 度：{confidence:F2}");
@@ -214,7 +218,15 @@ namespace examples
             var database = new TopologyDatabase("topology_labels.db");
             
             // 构建拓扑图和 WL 特征
-            var graph = FaceGraphBuilder.BuildGraph(model);
+            var graphs = FaceGraphBuilder.BuildGraphs(model);
+            if (graphs == null || graphs.Count == 0)
+            {
+                Console.WriteLine("无法构建拓扑图！");
+                return;
+            }
+            
+            // 使用第一个 body 的图
+            var graph = graphs[0];
             var wlFrequencies = WLGraphKernel.PerformWLIterations(graph, 1);
             
             // 使用不同的相似度阈值进行比较

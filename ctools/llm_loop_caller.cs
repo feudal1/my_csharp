@@ -32,7 +32,8 @@ namespace tools
             ("quit", "退出交互式循环模式"),
             ("exit", "退出交互式循环模式"),
             ("clear", "清空对话历史"),
-            ("mode", "切换命令执行模式（确认/自动）")
+            ("mode", "切换命令执行模式（确认/自动）"),
+            ("history", "查看对话历史")
         };
 
         public LlmLoopCaller(
@@ -90,7 +91,7 @@ namespace tools
         /// <summary>
         /// 执行 Tool 调用
         /// </summary>
-        private async Task<string> ExecuteToolCallAsync(ToolCall toolCall)
+        private async Task<(string Result, string CapturedOutput)> ExecuteToolCallAsync(ToolCall toolCall)
         {
             try
             {
@@ -139,44 +140,49 @@ namespace tools
                     else if (userInput != "y" && userInput != "yes")
                     {
                         Console.WriteLine("已跳过此命令");
-                        return $"命令 '{functionName}' 已经被用户拒绝";
+                        return ($"命令 '{functionName}' 已经被用户拒绝", "");
                     }
                 }
                         
-                Console.WriteLine($"\n>>> 正在执行命令：{fullCommand}...");
-                Console.WriteLine($"[调试] ExecuteToolCallAsync - 函数名：{functionName}");
-                Console.WriteLine($"[调试] ExecuteToolCallAsync - 参数值：{argumentValue}");
-                Console.WriteLine($"[调试] ExecuteToolCallAsync - 完整命令：{fullCommand}");
-                        
-                // 开始捕获 Console 输出
+                Console.WriteLine($"\n>>> 正在执行命令：{fullCommand}...\n");
+                
+                // 拦截 Console 输出到 tool 里面
                 _consoleOutputCapture!.GetStringBuilder().Clear();
                 Console.SetOut(_consoleOutputCapture);
-                        
-                string result = await _commandExecutor.ExecuteCommandAsync(fullCommand);
-                        
-                // 恢复原始 Console 输出
-                Console.SetOut(_originalConsoleOutput);
-                        
-                // 获取捕获的输出内容
-                string capturedOutput = _consoleOutputCapture.ToString();
-                        
-                Console.WriteLine($"\n[调试] ExecuteToolCallAsync - 执行结果：{result}");
-                Console.WriteLine($"执行结果：{result}");
-                        
-                // 如果有捕获的输出，将其添加到结果中
-                if (!string.IsNullOrWhiteSpace(capturedOutput))
+                
+                try
                 {
-                    Console.WriteLine($"\n[调试] 捕获到 Console 输出:\n{capturedOutput}");
-                    return $"{result}\n\n***命令输出:\n{capturedOutput}";
+                    string result = await _commandExecutor.ExecuteCommandAsync(fullCommand);
+                    
+                    // 恢复 Console 输出
+                    Console.SetOut(_originalConsoleOutput);
+                    
+                    // 获取捕获的输出
+                    string capturedOutput = _consoleOutputCapture.ToString();
+                    
+                    Console.WriteLine($"\n[调试] ExecuteToolCallAsync - 执行结果：{result}");
+                    
+                    // 显示捕获的输出
+                    if (!string.IsNullOrEmpty(capturedOutput))
+                    {
+                        Console.WriteLine("[捕获的输出]:");
+                        Console.Write(capturedOutput);
+                    }
+                    
+                    return (result, capturedOutput);
                 }
-                        
-                return result;
+                catch
+                {
+                    // 发生异常时也要恢复 Console 输出
+                    Console.SetOut(_originalConsoleOutput);
+                    throw;
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"\n[错误] ExecuteToolCallAsync 异常：{ex}");
                 Console.WriteLine($"\n❌ 执行 Tool 调用失败：{ex.Message}");
-                return $"执行失败：{ex.Message}";
+                return ($"执行失败：{ex.Message}", "");
             }
         }
 
@@ -276,6 +282,53 @@ namespace tools
         }
 
         /// <summary>
+        /// 使用模糊匹配查找最接近的注册命令，返回完全匹配和模糊匹配结果
+        /// </summary>
+        private (string Command, double Score, bool IsExactMatch)? FindFuzzyCommand(string input, double threshold = 0.5)
+        {
+            string inputLower = input.ToLower().Trim();
+            
+            // 先检查是否是特殊命令（特殊命令不在此处处理）
+            var specialCmd = FindFuzzySpecialCommand(input, threshold);
+            if (specialCmd != null)
+            {
+                return null;
+            }
+            
+            var allCommands = CommandRegistry.Instance.GetAllCommands();
+            var matches = new List<(string Command, double Score)>();
+            
+            foreach (var cmd in allCommands.Values)
+            {
+                double scoreName = CalculateSimilarity(inputLower, cmd.Name.ToLower());
+                double scoreDesc = CalculateSimilarity(inputLower, (cmd.Description ?? "").ToLower());
+                double score = Math.Max(scoreName, scoreDesc);
+                
+                // 如果完全匹配，给予最高分
+                if (inputLower == cmd.Name.ToLower())
+                {
+                    score = 1.0;
+                }
+                
+                if (score >= threshold)
+                {
+                    matches.Add((cmd.Name, score));
+                }
+            }
+            
+            // 返回得分最高的命令
+            if (matches.Count > 0)
+            {
+                var bestMatch = matches.OrderByDescending(m => m.Score).First();
+                bool isExactMatch = bestMatch.Score >= 1.0;
+                Console.WriteLine($"[调试] 模糊匹配命令：'{input}' -> '{bestMatch.Command}' (相似度：{bestMatch.Score:F2}, {(isExactMatch ? "完全匹配" : "模糊匹配")})");
+                return (bestMatch.Command, bestMatch.Score, isExactMatch);
+            }
+            
+            return null;
+        }
+
+        /// <summary>
         /// 交互式循环调用（使用 Tool 调用模式）
         /// </summary>
         public async Task InteractiveLoopAsync()
@@ -286,6 +339,7 @@ namespace tools
             Console.WriteLine("输入 'quit' 或 'exit' 退出");
             Console.WriteLine("输入 'clear' 清空对话历史");
             Console.WriteLine("输入 'mode' 切换命令执行模式（确认/自动）");
+            Console.WriteLine("输入 'history' 查看对话历史");
             Console.WriteLine("AI 会自动识别并调用合适的命令\n");
             
             // 获取所有可用命令并构建 Tool 定义
@@ -314,7 +368,7 @@ namespace tools
                 if (input.ToLower() == "clear")
                 {
                     _llmService.ClearHistory();
-                    Console.WriteLine("对话历史已清空\n");
+                  
                     continue;
                 }
                         
@@ -323,6 +377,84 @@ namespace tools
                     _requireConfirmation = !_requireConfirmation;
                     Console.WriteLine($"命令执行模式已切换为：{(_requireConfirmation ? "确认模式" : "自动模式")}\n");
                     continue;
+                }
+                
+                if (input.ToLower() == "history")
+                {
+                    ViewHistory();
+                    continue;
+                }
+                
+                if (input.ToLower() == "llm")
+                {
+                    await RunLlmModeAsync();
+                    continue;
+                }
+
+                // 检查是否直接输入了命令名（完全匹配或模糊匹配）
+                var matchedResult = FindFuzzyCommand(input);
+                if (matchedResult.HasValue)
+                {
+                    string matchedCommand = matchedResult.Value.Command;
+                    double matchScore = matchedResult.Value.Score;
+                    bool isExactMatch = matchedResult.Value.IsExactMatch;
+                    
+                    // 完全匹配：直接调用
+                    if (isExactMatch)
+                    {
+                        Console.WriteLine($"\n>>> 检测到完全匹配的命令：{matchedCommand}");
+                        
+                        try
+                        {
+                            string fullCommand = input;
+                            
+                            Console.WriteLine($"\n>>> 正在执行命令：{fullCommand}...\n");
+                            
+                            // 拦截 Console 输出
+                            _consoleOutputCapture!.GetStringBuilder().Clear();
+                            Console.SetOut(_consoleOutputCapture);
+                            
+                            try
+                            {
+                                string result = await _commandExecutor.ExecuteCommandAsync(fullCommand);
+                                
+                                // 恢复 Console 输出
+                                Console.SetOut(_originalConsoleOutput);
+                                
+                                // 获取捕获的输出
+                                string capturedOutput = _consoleOutputCapture.ToString();
+                                
+                                Console.WriteLine($"\n[调试] ExecuteCommandAsync - 执行结果：{result}");
+                                
+                                // 显示捕获的输出
+                                if (!string.IsNullOrEmpty(capturedOutput))
+                                {
+                                    Console.WriteLine("[捕获的输出]:");
+                                    Console.Write(capturedOutput);
+                                }
+                                
+                                // 将执行结果保存到记忆
+                                SaveCommandResultToMemory(matchedCommand, result);
+                            }
+                            catch
+                            {
+                                // 发生异常时也要恢复 Console 输出
+                                Console.SetOut(_originalConsoleOutput);
+                                throw;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"\n[错误] 命令执行失败：{ex.Message}\n");
+                        }
+                        continue;
+                    }
+                    // 模糊匹配：发送给 LLM 处理
+                    else
+                    {
+                        Console.WriteLine($"\n>>> 检测到模糊匹配的命令：'{input}' -> '{matchedCommand}' (相似度：{matchScore:F2})");
+                        Console.WriteLine(">>> 将请求发送给 LLM 进一步确认...\n");
+                    }
                 }
         
                 try
@@ -335,11 +467,11 @@ namespace tools
                     {
                         Console.WriteLine($"\n>>> 检测到 {toolCalls.Count} 个命令调用请求");
                         
-                        var results = new List<string>();
+                        var results = new List<(string Result, string CapturedOutput)>();
                         foreach (var toolCall in toolCalls)
                         {
-                            var result = await ExecuteToolCallAsync(toolCall);
-                            results.Add(result);
+                            var (result, capturedOutput) = await ExecuteToolCallAsync(toolCall);
+                            results.Add((result, capturedOutput));
                         }
                         
                         if (results.Count > 0)
@@ -366,7 +498,7 @@ namespace tools
         /// <summary>
         /// 将 Tool 调用结果保存到短期记忆
         /// </summary>
-        private void SaveToolResultsToMemory(List<ToolCall> toolCalls, List<string> results)
+        private void SaveToolResultsToMemory(List<ToolCall> toolCalls, List<(string Result, string CapturedOutput)> results)
         {
             try
             {
@@ -377,7 +509,7 @@ namespace tools
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
                     var toolCall = toolCalls[i];
-                    var result = results[i];
+                    var (result, capturedOutput) = results[i];
                     
                     // 解析函数名（去掉 execute_前缀）
                     string functionName = toolCall.Function.Name;
@@ -387,7 +519,11 @@ namespace tools
                     }
                     
                     sb.AppendLine($"\n- 命令：{functionName}");
-                    sb.AppendLine($"  结果：{result}");
+                    sb.AppendLine($"  返回：{result}");
+                    if (!string.IsNullOrEmpty(capturedOutput))
+                    {
+                        sb.AppendLine($"  输出:\n{capturedOutput}");
+                    }
                 }
                 
                 // 将结果作为 assistant 消息保存
@@ -405,6 +541,74 @@ namespace tools
             catch (Exception ex)
             {
                 Console.WriteLine($"[警告] 保存 Tool 调用结果失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 保存命令执行结果到记忆
+        /// </summary>
+        private void SaveCommandResultToMemory(string commandName, string result)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("\n***命令执行结果:***");
+                sb.AppendLine($"命令：{commandName}");
+                sb.AppendLine($"结果：{result}");
+                
+                // 将结果作为 assistant 消息保存
+                var messages = LoadMessagesFromDisk();
+                messages.Add(new ChatMessage 
+                { 
+                    Role = "assistant", 
+                    Content = sb.ToString() 
+                });
+                
+                SaveMessagesToDisk(messages);
+                
+                Console.WriteLine($"[调试] 命令执行结果已保存到短期记忆");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[警告] 保存命令执行结果失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 运行 LLM 对话模式
+        /// </summary>
+        private async Task RunLlmModeAsync()
+        {
+            Console.WriteLine("\n*** LLM 对话模式 ***");
+            Console.WriteLine("在此模式下，AI 会以自然语言回答你的问题");
+            Console.WriteLine("输入 'back' 返回命令执行模式\n");
+            
+            while (true)
+            {
+                var input = await GetUserInputAsync("你：");
+                
+                if (string.IsNullOrEmpty(input))
+                {
+                    continue;
+                }
+                
+                input = input.Trim();
+                
+                if (input.ToLower() == "back")
+                {
+                    Console.WriteLine("\n返回命令执行模式\n");
+                    break;
+                }
+                
+                try
+                {
+                    var response = await _llmService.ChatAsync(input);
+                    Console.WriteLine($"\n{response}\n");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"\n[错误] LLM 响应失败：{ex.Message}\n");
+                }
             }
         }
         
@@ -457,16 +661,60 @@ namespace tools
         }
 
         /// <summary>
-        /// 异步获取用户输入（非阻塞）
+        /// 异步获取用户输入 (非阻塞)
         /// </summary>
         private async Task<string?> GetUserInputAsync(string prompt)
         {
-            // 直接使用控制台输入
             return await Task.Run(() =>
             {
                 Console.Write(prompt);
                 return Console.ReadLine();
             });
+        }
+        
+        /// <summary>
+        /// 查看对话历史（特殊命令，不通过 Tool 调用）
+        /// </summary>
+        private void ViewHistory()
+        {
+            Console.WriteLine("\n=== LLM 短期记忆 ===\n");
+            
+            // 查看短期记忆（shot_memory.json）
+            string llmDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm");
+            string shotMemoryFile = Path.Combine(llmDir, "shot_memory.json");
+            
+            if (File.Exists(shotMemoryFile))
+            {
+                try
+                {
+                    var json = File.ReadAllText(shotMemoryFile, Encoding.UTF8);
+                    var messages = JsonConvert.DeserializeObject<List<dynamic>>(json);
+                    if (messages != null && messages.Count > 0)
+                    {
+                        Console.WriteLine($"共 {messages.Count} 条消息:\n");
+                        int i = 1;
+                        foreach (var msg in messages)
+                        {
+                            string role = msg.role ?? "unknown";
+                            string content = msg.content ?? "";
+                            Console.WriteLine($"{i++}. [{role}] {content}");
+                            Console.WriteLine();
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("暂无对话历史");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"读取短期记忆失败：{ex.Message}");
+                }
+            }
+            else
+            {
+                Console.WriteLine("暂无短期记忆文件");
+            }
         }
 
 

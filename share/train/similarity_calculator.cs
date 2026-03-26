@@ -13,9 +13,9 @@ namespace tools
         /// <summary>
         /// 从文件夹中加载所有零件并构建图
         /// </summary>
-        public static List<PartGraph> LoadPartsFromFolder(string folderPath, ISldWorks swApp)
+        public static List<BodyGraph> LoadPartsFromFolder(string folderPath, ISldWorks swApp)
         {
-            var graphs = new List<PartGraph>();
+            var graphs = new List<BodyGraph>();
             
             if (!Directory.Exists(folderPath))
             {
@@ -55,11 +55,12 @@ namespace tools
                     if (model != null)
                     {
                         // 构建图结构
-                        PartGraph graph = FaceGraphBuilder.BuildGraph(model);
-                        
-                        if (graph != null && graph.Nodes.Count > 0)
+                        var bodyGraphs = FaceGraphBuilder.BuildGraphs(model);
+                                            
+                        // 将每个 body 的图添加到结果中
+                        if (bodyGraphs != null && bodyGraphs.Count > 0)
                         {
-                            graphs.Add(graph);
+                            graphs.AddRange(bodyGraphs);
                         }
                     
                       model.Save2(true);
@@ -84,21 +85,20 @@ namespace tools
         /// <summary>
         /// 从当前已打开的零件中构建图列表
         /// </summary>
-        public static List<PartGraph> BuildGraphsFromOpenParts(ModelDoc2[] models)
+        public static List<BodyGraph> BuildGraphsFromOpenParts(ModelDoc2[] models)
         {
-            var graphs = new List<PartGraph>();
+            var graphs = new List<BodyGraph>();
             
             for (int i = 0; i < models.Length; i++)
             {
                 if (models[i] != null)
                 {
+                    // 为每个零件构建所有 body 的图
+                    var bodyGraphs = FaceGraphBuilder.BuildGraphs(models[i]);
                     
-                    
-                    PartGraph graph = FaceGraphBuilder.BuildGraph(models[i]);
-                    
-                    if (graph != null && graph.Nodes.Count > 0)
+                    if (bodyGraphs != null && bodyGraphs.Count > 0)
                     {
-                        graphs.Add(graph);
+                        graphs.AddRange(bodyGraphs);
                     }
                 }
             }
@@ -109,11 +109,11 @@ namespace tools
         /// <summary>
         /// 计算单个零件对的相似度
         /// </summary>
-        public static double CalculatePairSimilarity(PartGraph graph1, PartGraph graph2, int iterations = 1)
+        public static double CalculatePairSimilarity(BodyGraph graph1, BodyGraph graph2, int iterations = 1)
         {
             Console.WriteLine($"\n计算零件对相似度:");
-            Console.WriteLine($"  零件 1: {graph1.PartName} ({graph1.Nodes.Count} 个面)");
-            Console.WriteLine($"  零件 2: {graph2.PartName} ({graph2.Nodes.Count} 个面)");
+            Console.WriteLine($"  Body 1: {graph1.PartName}/{graph1.BodyName} ({graph1.Nodes.Count} 个面)");
+            Console.WriteLine($"  Body 2: {graph2.PartName}/{graph2.BodyName} ({graph2.Nodes.Count} 个面)");
 
             // 执行 WL 迭代
             var freqList1 = WLGraphKernel.PerformWLIterations(graph1, iterations);
@@ -130,7 +130,7 @@ namespace tools
         /// <summary>
         /// 运行完整分析流程
         /// </summary>
-        public static void RunAnalysis(List<PartGraph> graphs, int wlIterations = 1, double decayFactor = 0.5)
+        public static void RunAnalysis(List<BodyGraph> graphs, int wlIterations = 1, double decayFactor = 0.5)
         {
             if (graphs == null || graphs.Count < 2)
             {
@@ -147,11 +147,11 @@ namespace tools
             Console.WriteLine($"{'='*60}\n");
 
             // 打印每个零件的基本信息
-            Console.WriteLine("零件列表:");
+            Console.WriteLine("Body 列表:");
             for (int i = 0; i < graphs.Count; i++)
             {
                 var graph = graphs[i];
-                Console.WriteLine($"  {i + 1}. {graph.PartName,-40} [{graph.Nodes.Count} 个面]");
+                Console.WriteLine($"  {i + 1}. {graph.PartName}/{graph.BodyName,-40} [{graph.Nodes.Count} 个面]");
             }
             Console.WriteLine();
 
@@ -165,7 +165,7 @@ namespace tools
         /// <summary>
         /// 输出详细分析报告
         /// </summary>
-        private static void OutputDetailedReport(double[,] matrix, List<PartGraph> graphs)
+        private static void OutputDetailedReport(double[,] matrix, List<BodyGraph> graphs)
         {
             int n = matrix.GetLength(0);
             
