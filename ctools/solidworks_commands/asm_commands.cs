@@ -54,10 +54,9 @@ namespace tools
         {
             if (swApp == null || swModel == null) return;
 
-            asm2do.run(swApp, swModel, (model, app) => {
-                asm2bom.run(app,model);
-                return 0;
-            });
+           
+                asm2bom.run(swApp,swModel);
+       
         }
 
         [Command("asm2drw", Description = "装配体批量生成工程图", Parameters = "无", Group = "solidworks")]

@@ -57,29 +57,13 @@ namespace tools
             }
         }
 
-        [Command("merge_dwg", Description = "合并多个 DWG 文件", Parameters = "<DWG 文件路径>", Group = "cad")]
-        static void MergeDwgCommand(string[] args)
-        {
-            if (args.Length > 1)
-            {
-                merge_dwg.run(args[1], 0.0, 0.0);
-            }
-            else
-            {
-                Console.WriteLine("请提供 DWG 文件路径参数");
-            }
-        }
 
-        [Command("folder2merge", Description = "批量合并文件夹内 DWG 文件（水平排列，间距 10）", Parameters ="无", Group = "cad")]
-        static void Folder2MergeCommand(string[] args)
-        {
-            folder2merge.run();
-        }
 
-        [Command("folder_with_subfolders_draw_divider", Description = "遍历（子）文件夹：合并 DWG 并绘制边界框", Parameters = "无", Group = "cad")]
+        [Command("mergedwg", Description = "遍历（子）文件夹：合并 DWG 并绘制边界框", Parameters = "无", Group = "cad")]
         static void FolderWithSubfoldersDrawDividerCommand(string[] args)
         {
             draw_divider.process_subfolders_with_divider();
+
         }
          [Command("get_all_dim_style", Description = "获取所有标注样式并添加 UUID4 后缀", Parameters = "无", Group = "cad")]
         static void GetAllDimStyleCommand(string[] args)

@@ -18,7 +18,7 @@ namespace test
          //   TopologyLabeler.FindCategoriesByWL(swModel, wlIterations: 1, topK: 5);
          draw_divider.process_subfolders_with_divider();
             
-            CheckDatabase();
+         //   CheckDatabase();
         }
         
         static void CheckDatabase()

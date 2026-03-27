@@ -143,26 +143,56 @@ namespace cad_tools
         /// </summary>
         static public void process_subfolders_with_divider()
         {
-            string? selectedFolder = FolderPicker.SelectFolder();
-            if (string.IsNullOrEmpty(selectedFolder))
+            // 在非 STA 线程上创建新线程来执行 UI 操作
+            if (System.Threading.Thread.CurrentThread.GetApartmentState() != System.Threading.ApartmentState.STA)
             {
-                Console.WriteLine("未选择文件夹，操作取消。");
-                return;
+                var tcs = new System.Threading.Tasks.TaskCompletionSource<string?>();
+                var thread = new System.Threading.Thread(() =>
+                {
+                    try { tcs.SetResult(FolderPicker.SelectFolder()); }
+                    catch (Exception ex) { tcs.SetException(ex); }
+                });
+                thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                thread.Start();
+                
+                string? selectedFolder = tcs.Task.Result;
+                if (string.IsNullOrEmpty(selectedFolder))
+                {
+                    Console.WriteLine("未选择文件夹，操作取消。");
+                    return;
+                }
+                
+                ProcessFolderLogic(selectedFolder);
             }
-           
-            double partSpacing = 15.0; // 零件之间的间距
-            double folderSpacing = 100.0; // 文件夹之间的间距
-            double textHeight = 15; // 文字高度
-            double textOffsetY = -30.0; // 文字相对于内容底部的 Y 偏移
+            else
+            {
+                // 直接在当前 STA 线程执行
+                string? selectedFolder = FolderPicker.SelectFolder();
+                if (string.IsNullOrEmpty(selectedFolder))
+                {
+                    Console.WriteLine("未选择文件夹，操作取消。");
+                    return;
+                }
+                ProcessFolderLogic(selectedFolder);
+            }
+        }
+
+        /// <summary>
+        /// 实际的文件夹处理逻辑
+        /// </summary>
+        static private void ProcessFolderLogic(string selectedFolder)
+        {
+            double partSpacing = 15.0;
+            double folderSpacing = 100.0;
+            double textHeight = 15;
+            double textOffsetY = -30.0;
             
             Console.WriteLine($"\n开始处理文件夹：{selectedFolder}");
             Console.WriteLine($"参数设置：零件间距={partSpacing}, 文件夹间距={folderSpacing}, 文字高度={textHeight}");
             
-            // 递归处理所有层级
             var result = process_folder_recursive(
                 selectedFolder,
-                0.0,   // 起始 X
-                0.0,   // 起始 Y
+                0.0, 0.0,
                 partSpacing,
                 folderSpacing,
                 textHeight,
