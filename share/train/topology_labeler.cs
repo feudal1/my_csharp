@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Newtonsoft.Json;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -71,11 +72,19 @@ namespace tools
                     return;
                 }
 
+                // 执行 WL 迭代计算标签频率
+                Console.WriteLine($"\n=== 执行 WL 迭代 ({wlIterations} 次) ===");
+                foreach (var graph in graphs)
+                {
+                    var wlFreq = WLGraphKernel.PerformWLIterations(graph, wlIterations);
+                    // graph.LabelFrequency 已被更新为最后一轮迭代的结果
+                }
+
                 // 获取零件信息
                 string partName = swModel.GetTitle();
                 string fullPath = swModel.GetPathName();
 
-                // 存储到数据库
+                // 存储到数据库（此时 graphs.LabelFrequency 已包含最后一轮 WL 迭代结果）
                 Console.WriteLine("\n=== 存储到数据库 ===");
                 var bodyIds = _database!.UpsertPartWithBodies(partName, fullPath, graphs);
 
@@ -421,11 +430,28 @@ namespace tools
 
                 // 查找相似类别
                 Console.WriteLine("\n=== 查找推荐类别 ===");
-                var recommendations = _database!.FindTopCategoriesByWLTags(combinedFrequencies, topK: topK);
-
+                int lastIter = combinedFrequencies.Count - 1;
+                Console.WriteLine($"使用合并后的 WL 频率（迭代 {lastIter}）：{JsonConvert.SerializeObject(combinedFrequencies[lastIter])}");
+                
+                var recommendations = _database!.FindTopCategoriesByWLTags(combinedFrequencies, topK: topK, minSimilarity: 0.3);
+                
                 if (recommendations.Count == 0)
                 {
                     Console.WriteLine("未找到相似的已标注 body");
+                    // 调试：显示数据库中的内容
+                    Console.WriteLine("\n[调试] 数据库中已有的标注数据:");
+                    var allBodies = _database.GetAllBodiesWithLabels();
+                    if (allBodies.Count > 0)
+                    {
+                        foreach (var (partId, partName, bodyId, bodyName, labels) in allBodies)
+                        {
+                            Console.WriteLine($"  - {bodyName}: {labels.Count} 个标注");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("  数据库中暂无任何标注数据");
+                    }
                     return;
                 }
 
@@ -460,7 +486,9 @@ namespace tools
         /// </summary>
         private static void ViewDetailedMatches(List<Dictionary<string, int>> wlFrequencies, int topK = 10)
         {
-            var detailedResults = _database!.FindCategoriesByWLTags(wlFrequencies, topK: topK);
+            // 使用最后一轮迭代进行查询
+            int queryIter = wlFrequencies.Count - 1;
+            var detailedResults = _database!.FindCategoriesByWLTags(wlFrequencies, topK: topK, minSimilarity: 0.3);
 
             if (detailedResults.Count == 0)
             {
@@ -487,6 +515,165 @@ namespace tools
             }
 
             Console.WriteLine($"{'=',80}\n");
+        }
+
+        /// <summary>
+        /// 使用 WL 标签查找相似的用户标注（直接显示 body 的标注信息）
+        /// </summary>
+        public static void FindLabelsByWL(ModelDoc2 swModel, int wlIterations = 1, int topK = 10, double minSimilarity = 0.3)
+        {
+            if (swModel == null)
+            {
+                Console.WriteLine("× 错误：没有打开的活动文档");
+                return;
+            }
+
+            if (_database == null)
+            {
+                Initialize();
+            }
+
+            try
+            {
+                // 构建所有 body 的拓扑图
+                Console.WriteLine("\n=== 构建零件拓扑图 ===");
+                var graphs = FaceGraphBuilder.BuildGraphs(swModel);
+                
+                if (graphs.Count == 0)
+                {
+                    Console.WriteLine("× 无法构建拓扑图");
+                    return;
+                }
+
+                // 合并所有 body 的 WL 频率（简单叠加）
+                Console.WriteLine($"\n=== 执行 WL 迭代 ({wlIterations} 次) ===");
+                var combinedFrequencies = new List<Dictionary<string, int>>();
+                
+                foreach (var graph in graphs)
+                {
+                    var wlFreq = WLGraphKernel.PerformWLIterations(graph, wlIterations);
+                    if (combinedFrequencies.Count == 0)
+                    {
+                        combinedFrequencies = wlFreq;
+                    }
+                    else
+                    {
+                        // 合并频率
+                        for (int i = 0; i < wlFreq.Count; i++)
+                        {
+                            foreach (var kvp in wlFreq[i])
+                            {
+                                if (!combinedFrequencies[i].ContainsKey(kvp.Key))
+                                    combinedFrequencies[i][kvp.Key] = 0;
+                                combinedFrequencies[i][kvp.Key] += kvp.Value;
+                            }
+                        }
+                    }
+                }
+
+                // 查找相似的标注
+                Console.WriteLine("\n=== 查找相似的用户标注 ===");
+                int lastIter = combinedFrequencies.Count - 1;
+                Console.WriteLine($"使用合并后的 WL 频率（迭代 {lastIter}）：{JsonConvert.SerializeObject(combinedFrequencies[lastIter])}");
+                
+                // 使用数据库方法查找相似的标注
+                var matches = _database!.FindBodiesByWLTags(combinedFrequencies, topK: topK, minSimilarity: minSimilarity);
+                
+                if (matches.Count == 0)
+                {
+                    Console.WriteLine("未找到相似的已标注 body");
+                    return;
+                }
+
+                // 显示结果
+                Console.WriteLine($"\n{'=',80}");
+                Console.WriteLine("TOP-5 相似标注");
+                Console.WriteLine($"{'=',80}\n");
+
+                var top5 = matches.Take(5).ToList();
+                for (int i = 0; i < top5.Count; i++)
+                {
+                    var (partId, partName, bodyId, bodyName, labelCategory, labelValue, similarity, confidence, notes) = matches[i];
+                    Console.WriteLine($"{i + 1}. Body：{partName}+{bodyName}");
+                    Console.WriteLine($"   标注：{labelCategory} = {labelValue}");
+                    Console.WriteLine($"   相似度：{similarity:F3} ({similarity * 100:F1}%)");
+                    Console.WriteLine($"   置信度：{confidence:F2}");
+                    if (!string.IsNullOrEmpty(notes))
+                    {
+                        Console.WriteLine($"   备注：{notes}");
+                    }
+                    Console.WriteLine();
+                }
+
+                Console.WriteLine($"{'=',80}\n");
+                
+                // 显示详细匹配结果
+                Console.WriteLine($"{'=',80}");
+                Console.WriteLine("详细匹配结果");
+                Console.WriteLine($"{'=',80}\n");
+
+                for (int i = 0; i < matches.Count; i++)
+                {
+                    var (partId, partName, bodyId, bodyName, labelCategory, labelValue, similarity, confidence, notes) = matches[i];
+                    Console.WriteLine($"[{i + 1}] {partName}+{bodyName}");
+                    Console.WriteLine($"    标注：{labelCategory} = {labelValue}");
+                    Console.WriteLine($"    相似度：{similarity:F3} ({similarity * 100:F1}%)");
+                    Console.WriteLine($"    置信度：{confidence:F2}");
+                    if (!string.IsNullOrEmpty(notes))
+                    {
+                        Console.WriteLine($"    备注：{notes}");
+                    }
+                    Console.WriteLine();
+                }
+
+                Console.WriteLine($"{'=',80}\n");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"× 查找过程出错：{ex.Message}");
+                Console.WriteLine(ex.StackTrace);
+            }
+        }
+
+        /// <summary>
+        /// 清空拓扑数据库
+        /// </summary>
+        public static void ClearDatabase(string mode = "all")
+        {
+            if (_database == null)
+            {
+                Initialize();
+            }
+
+            Console.WriteLine($"\n=== 清空拓扑数据库 ===");
+            
+            try
+            {
+                switch (mode.ToLower())
+                {
+                    case "wl":
+                        _database!.ClearAllWLResults();
+                        Console.WriteLine("✓ WL 结果已清空");
+                        break;
+                    
+                    case "labels":
+                        _database!.ClearAllLabels();
+                        Console.WriteLine("✓ 标注数据已清空");
+                        break;
+                    
+                    case "all":
+                    default:
+                        _database!.ClearAll();
+                        Console.WriteLine("✓ 所有数据已清空");
+                        break;
+                }
+                
+                ShowStatistics();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"× 清空数据库失败：{ex.Message}");
+            }
         }
     }
 }

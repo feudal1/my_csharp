@@ -1,5 +1,5 @@
 ﻿=== SolidWorks 自动化命令列表 ===
-更新时间：2026-03-27 09:04:43
+更新时间：2026-03-27 13:38:31
 3. 执行前需用户确认 (y/n/auto)
 
 
@@ -30,6 +30,10 @@
 【solidworks】close_current_doc 
     说明：关闭当前文档
     参数：无
+
+【train】dbclear 
+    说明：清空拓扑数据库（可选：wl/labels/all，默认 all）。用法：dbclear - 清空所有数据；dbclear wl - 只清空 WL 结果；dbclear labels - 只清空标注
+    参数：[可选的：wl|labels|all, 默认 all]
 
 【train】delete_part 
     说明：删除零件 ID 为 x 的所有数据（包括 WL 结果和标注）
@@ -64,8 +68,12 @@
     参数：无
 
 【train】find_category 
-    说明：查询当前零件的推荐类别（基于 WL 图核相似度匹配）
+    说明：查询当前零件的相似零件（基于 WL 图核相似度匹配），查询每个 body 相似的body
     参数：[可选的：迭代次数，默认 1] [可选的：返回数量，默认 5]
+
+【train】find_labels_by_wl 
+    说明：查询当前零件的标签，分类，使用 WL 拓扑标签查找具有相似特征的用户标注（直接匹配 body 的标注）
+    参数：[可选的：迭代次数，默认 1] [可选的：返回数量，默认 10] [可选的：最小相似度，默认 0.3]
 
 【cad】folder_with_subfolders_draw_divider 
     说明：遍历（子）文件夹：合并 DWG 并绘制边界框
@@ -132,7 +140,7 @@
     参数：无
 
 【train】label 
-    说明：标注当前零件的拓扑图。用法：label [body 名称] [值] - 精确匹配 body 名称并标注。示例：label 凸台拉伸 1 管件、label 法兰盘 钣金件
+    说明：标注当前零件的拓扑图，把xx标注成xx件。用法：label [body 名称] [值] - 精确匹配 body 名称并标注。示例：label 凸台拉伸 1 管件、label 法兰盘 钣金件
     参数：[body 名称] [值]
 
 【train】label_all 
@@ -200,5 +208,5 @@
     参数：无
 
 【train】view_parts 
-    说明：查看所有已标注的零件
+    说明：查看数据库里所有已标注的零件
     参数：无

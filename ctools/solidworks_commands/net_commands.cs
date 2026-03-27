@@ -14,7 +14,7 @@ namespace tools
     {
         // ========== 拓扑标注相关命令 ==========
         
-        [Command("label", Description = "标注当前零件的拓扑图。用法：label [body 名称] [值] - 精确匹配 body 名称并标注。示例：label 凸台拉伸 1 管件、label 法兰盘 钣金件", Parameters = "[body 名称] [值]", Group = "train")]
+        [Command("label_body", Description = "标注当前零件的拓扑图，把xx标注成xx件。用法：label [body 名称] [值] - 精确匹配 body 名称并标注。示例：label 凸台拉伸 1 管件、label 法兰盘 钣金件", Parameters = "[body 名称] [值]", Group = "train")]
 
         static void LabelPart(string[] args)
         {
@@ -22,33 +22,6 @@ namespace tools
             {
                 Console.WriteLine("错误：请先打开一个零件文档");
                 return;
-            }
-
-            Console.WriteLine("=== 零件拓扑标注 ===\n");
-            
-            // 构建所有 Body 的拓扑图并执行 WL 迭代
-            var graphs = FaceGraphBuilder.BuildGraphs(Program.SwModel);
-            
-            if (graphs.Count == 0)
-            {
-                Console.WriteLine("× 无法构建拓扑图");
-                return;
-            }
-
-            // 获取零件信息
-            string partName = Program.SwModel.GetTitle();
-            string fullPath = Program.SwModel.GetPathName();
-
-            // 初始化数据库并存储到数据库
-            TopologyLabeler.Initialize();
-            var database = TopologyLabeler.GetDatabase();
-            var bodyIds = database!.UpsertPartWithBodies(partName, fullPath, graphs);
-
-            // 显示所有 body 信息（带索引）
-            Console.WriteLine($"\n零件包含 {bodyIds.Count} 个 body:");
-            for (int i = 0; i < bodyIds.Count; i++)
-            {
-                Console.WriteLine($"  [{i}] {graphs[i].FullBodyName} ({graphs[i].Nodes.Count} 个面)");
             }
 
             // 检查参数
@@ -66,49 +39,77 @@ namespace tools
             string bodyName = args[0];
             string value = args[1];
 
-            // 精确匹配（忽略大小写和首尾空格）- 支持完整名称或部分名称
+            Console.WriteLine("=== 零件拓扑标注 ===\n");
+            
+            // 获取所有 body 的名称列表（不构建图）
+            PartDoc partDoc = (PartDoc)Program.SwModel;
+            object[]? vBodies = (object[])partDoc.GetBodies2((int)swBodyType_e.swSolidBody, false);
+            
+            if (vBodies == null || vBodies.Length == 0)
+            {
+                Console.WriteLine("× 未找到任何 body");
+                return;
+            }
+            
+            // 查找匹配的 body
+            Body2? targetBody = null;
             int targetIndex = -1;
             string normalizedInput = bodyName.Trim().ToLower();
             
-            // 优先尝试匹配完整名称（FullBodyName）
-            for (int i = 0; i < graphs.Count; i++)
+            // 显示所有 body 信息
+            Console.WriteLine($"零件包含 {vBodies.Length} 个 body:");
+            for (int i = 0; i < vBodies.Length; i++)
             {
-                if (graphs[i].FullBodyName.Trim().ToLower() == normalizedInput)
+                var body = (Body2)vBodies[i];
+                string bName = body.Name;
+                Console.WriteLine($"  [{i}] {bName}");
+                
+                // 精确匹配（忽略大小写和首尾空格）
+                if (targetBody == null)
                 {
-                    targetIndex = i;
-                    break;
-                }
-            }
-            
-            // 如果完整名称匹配失败，尝试只匹配 body 名称部分
-            if (targetIndex == -1)
-            {
-                for (int i = 0; i < graphs.Count; i++)
-                {
-                    if (graphs[i].BodyName.Trim().ToLower() == normalizedInput)
+                    if (bName.Trim().ToLower() == normalizedInput)
                     {
+                        targetBody = body;
                         targetIndex = i;
-                        break;
                     }
                 }
             }
-
-            if (targetIndex == -1)
+            
+            if (targetBody == null)
             {
                 Console.WriteLine($"\n× 错误：未找到名为 '{bodyName}' 的 body");
-                Console.WriteLine("\n可用的 body 名称有:");
-                for (int i = 0; i < graphs.Count; i++)
-                {
-                    Console.WriteLine($"  [{i}] {graphs[i].FullBodyName} (原始：{graphs[i].BodyName})");
-                }
-                Console.WriteLine("\n提示：可以使用完整名称（零件名+Body 名）或仅 Body 名称进行匹配。");
                 return;
             }
-
+            
+            // 只为目标 body 构建拓扑图
+            Console.WriteLine($"\n正在为 Body [{targetIndex}] {targetBody.Name} 构建拓扑图...");
+            var graph = FaceGraphBuilder.BuildSingleBodyGraph(Program.SwModel, targetBody);
+            
+            if (graph == null || graph.Nodes.Count == 0)
+            {
+                Console.WriteLine("× 无法构建拓扑图");
+                return;
+            }
+            
+            Console.WriteLine($"  ✓ Body [{targetBody.Name}] 构建完成：{graph.Nodes.Count} 个面");
+            
+            // 执行 WL 迭代
+            Console.WriteLine($"\n=== 执行 WL 迭代 (1 次) ===");
+            WLGraphKernel.PerformWLIterations(graph, 1);
+            
+            // 获取零件信息
+            string partName = Program.SwModel.GetTitle();
+            string fullPath = Program.SwModel.GetPathName();
+            
+            // 初始化数据库并存储到数据库
+            TopologyLabeler.Initialize();
+            var database = TopologyLabeler.GetDatabase();
+            var bodyIds = database!.UpsertPartWithBodies(partName, fullPath, new List<BodyGraph> { graph });
+            
             // 标注指定的 body
-            int targetBodyId = bodyIds[targetIndex];
-            AddAndShowLabel(database, targetBodyId, graphs[targetIndex], value, targetIndex);
-
+            int targetBodyId = bodyIds[0];
+            AddAndShowLabel(database, targetBodyId, graph, value, 0);
+            
             // 显示统计信息
             TopologyLabeler.ShowStatistics();
         }
@@ -145,7 +146,7 @@ namespace tools
         /// <summary>
         /// 标注所有 body 为同一个值
         /// </summary>
-        [Command("label_all", Description = "标注当前零件的所有 body 为同一个标注。用法：label_all [值] - 无需指定 body 名称，将所有 body 标注为同一类别。示例：label_all 管件、label_all 钣金件、标注当前文件为 xx 也用此方法", Parameters = "[值]", Group = "train")]
+        [Command("label_all_bodies", Description = "标注当前零件的所有 body 为同一个标注。用法：label_all [值] - 无需指定 body 名称，将所有 body 标注为同一类别。示例：label_all 管件、label_all 钣金件、标注当前文件为 xx 也用此方法", Parameters = "[值]", Group = "train")]
         static void LabelAllBodies(string[] args)
         {
             if (Program.SwModel == null)
@@ -205,7 +206,7 @@ namespace tools
         }
  
  
- [Command("find_category", Description = "查询当前零件的推荐类别（基于 WL 图核相似度匹配）", Parameters = "[可选的：迭代次数，默认 1] [可选的：返回数量，默认 5]", Group = "train")]
+        [Command("find_similar_parts", Description = "查询当前零件的相似零件（基于 WL 图核相似度匹配），返回整体零件的相似度排名", Parameters = "[可选的：迭代次数，默认 1] [可选的：返回数量，默认 5]", Group = "train")]
         static void FindCategory(string[] args)
         {
             if (Program.SwModel == null)
@@ -213,30 +214,61 @@ namespace tools
                 Console.WriteLine("错误：请先打开一个零件文档");
                 return;
             }
-     // 调试输出：显示 args 的实际内容
-            Console.WriteLine($"[调试] FindCategory 收到 args.Length = {args.Length}");
-            if (args.Length > 0)
-            {
-                Console.WriteLine($"[调试] args 内容：[{string.Join(", ", args)}]");
-            }
-
+    
             int iterations = 1;
             int topK = 5;
-
+     
             if (args.Length > 0 && int.TryParse(args[0], out int iter))
             {
                 iterations = iter;
             }
-
+     
             if (args.Length > 1 && int.TryParse(args[1], out int k))
             {
                 topK = k;
             }
-
+     
             Console.WriteLine("=== 查询当前零件的推荐类别 ===\n");
-            
+                 
             // 调用 TopologyLabeler.FindCategoriesByWL 方法
             TopologyLabeler.FindCategoriesByWL(Program.SwModel, wlIterations: iterations, topK: topK);
+        }
+             
+        /// <summary>
+        /// 使用 WL 标签查找相似的用户标注
+        /// </summary>
+        [Command("find_similar_labels", Description = "查询当前零件的相似标注，使用 WL 拓扑标签查找具有相似特征的用户标注（匹配 body 级别的标注）", Parameters = "[可选的：迭代次数，默认 1] [可选的：返回数量，默认 10] [可选的：最小相似度，默认 0.3]", Group = "train")]
+        static void FindLabelsByWL(string[] args)
+        {
+            if (Program.SwModel == null)
+            {
+                Console.WriteLine("错误：请先打开一个零件文档");
+                return;
+            }
+     
+            int iterations = 1;
+            int topK = 10;
+            double minSimilarity = 0.3;
+     
+            if (args.Length > 0 && int.TryParse(args[0], out int iter))
+            {
+                iterations = iter;
+            }
+     
+            if (args.Length > 1 && int.TryParse(args[1], out int k))
+            {
+                topK = k;
+            }
+     
+            if (args.Length > 2 && double.TryParse(args[2], out double sim))
+            {
+                minSimilarity = sim;
+            }
+     
+            Console.WriteLine("=== 使用 WL 标签查找用户标注 ===\n");
+                 
+            // 调用 TopologyLabeler.FindLabelsByWL 方法
+            TopologyLabeler.FindLabelsByWL(Program.SwModel, wlIterations: iterations, topK: topK, minSimilarity: minSimilarity);
         }
         
         /// <summary>
@@ -296,7 +328,7 @@ namespace tools
             TopologyLabelingExample.QuickLabel(Program.SwApp!, Program.SwModel);
         }
 
-        [Command("view_parts", Description = "查看所有已标注的零件", Parameters = "无", Group = "train")]
+        [Command("view_parts", Description = "查看数据库里所有已标注的零件", Parameters = "无", Group = "train")]
         static void ViewAllParts(string[] args)
         {
             TopologyLabeler.ViewAllParts();
@@ -409,6 +441,28 @@ namespace tools
             {
                 Console.WriteLine("错误：零件 ID 必须是数字");
             }
+        }
+
+        [Command("dbclear", Description = "清空拓扑数据库（可选：wl/labels/all，默认 all）。用法：dbclear - 清空所有数据；dbclear wl - 只清空 WL 结果；dbclear labels - 只清空标注", Parameters = "[可选的：wl|labels|all, 默认 all]", Group = "train")]
+        static void ClearDatabase(string[] args)
+        {
+            string mode = "all";
+            
+            if (args.Length > 0)
+            {
+                mode = args[0].ToLower();
+                if (mode != "wl" && mode != "labels" && mode != "all")
+                {
+                    Console.WriteLine("错误：无效的模式，请使用 wl、labels 或 all");
+                    Console.WriteLine("\n用法:");
+                    Console.WriteLine("  dbclear       - 清空所有数据");
+                    Console.WriteLine("  dbclear wl    - 只清空 WL 结果");
+                    Console.WriteLine("  dbclear labels - 只清空标注");
+                    return;
+                }
+            }
+            
+            TopologyLabeler.ClearDatabase(mode);
         }
     }
 }

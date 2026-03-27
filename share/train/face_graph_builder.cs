@@ -96,7 +96,7 @@ namespace tools
         /// <summary>
         /// 从单个 body 构建图
         /// </summary>
-        private static BodyGraph BuildSingleBodyGraph(ModelDoc2 swModel, Body2 body)
+        public static BodyGraph BuildSingleBodyGraph(ModelDoc2 swModel, Body2 body)
         {
             BodyGraph graph = new BodyGraph();
             // 获取零件名并过滤扩展名

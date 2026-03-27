@@ -152,7 +152,7 @@ namespace tools
         }
 
         /// <summary>
-        /// 添加或更新零件及其所有 body 的 WL 结果
+        /// 添加或更新零件及其所有 body 的 WL 结果（保存所有迭代轮次）
         /// </summary>
         public List<int> UpsertPartWithBodies(string partName, string filePath, List<BodyGraph> bodyGraphs)
         {
@@ -181,18 +181,23 @@ namespace tools
                                 cmd.ExecuteNonQuery();
                             }
 
-                            // 插入新的 WL 结果（只存储 iteration 0）
-                            string insertWL = @"
-                                INSERT INTO wl_results (body_id, iteration, label_frequencies) 
-                                VALUES (@body_id, @iteration, @frequencies)";
-
-                            using (var cmd = new SQLiteCommand(insertWL, connection, transaction))
+                            // 执行 WL 迭代并保存所有轮次的结果
+                            var allIterations = WLGraphKernel.PerformWLIterations(bodyGraph, iterations: 1);
+                            
+                            for (int iter = 0; iter < allIterations.Count; iter++)
                             {
-                                cmd.Parameters.Clear();
-                                cmd.Parameters.AddWithValue("@body_id", bodyId);
-                                cmd.Parameters.AddWithValue("@iteration", 0);
-                                cmd.Parameters.AddWithValue("@frequencies", JsonConvert.SerializeObject(bodyGraph.LabelFrequency));
-                                cmd.ExecuteNonQuery();
+                                string insertWL = @"
+                                    INSERT INTO wl_results (body_id, iteration, label_frequencies) 
+                                    VALUES (@body_id, @iteration, @frequencies)";
+
+                                using (var cmd = new SQLiteCommand(insertWL, connection, transaction))
+                                {
+                                    cmd.Parameters.Clear();
+                                    cmd.Parameters.AddWithValue("@body_id", bodyId);
+                                    cmd.Parameters.AddWithValue("@iteration", iter);
+                                    cmd.Parameters.AddWithValue("@frequencies", JsonConvert.SerializeObject(allIterations[iter]));
+                                    cmd.ExecuteNonQuery();
+                                }
                             }
                             
                             bodyIds.Add(bodyId);
@@ -701,6 +706,100 @@ namespace tools
         }
 
         /// <summary>
+        /// 清空所有 WL 结果数据（用于重置）
+        /// </summary>
+        public void ClearAllWLResults()
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                using (var cmd = new SQLiteCommand("DELETE FROM wl_results", connection))
+                {
+                    int rowsAffected = cmd.ExecuteNonQuery();
+                    Console.WriteLine($"✓ 已删除 {rowsAffected} 条 WL 结果记录");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 清空所有标注数据
+        /// </summary>
+        public void ClearAllLabels()
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                using (var cmd = new SQLiteCommand("DELETE FROM user_labels", connection))
+                {
+                    int rowsAffected = cmd.ExecuteNonQuery();
+                    Console.WriteLine($"✓ 已删除 {rowsAffected} 条标注记录");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 清空所有数据（包括零件、body、WL 结果和标注）
+        /// </summary>
+        public void ClearAll()
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 启用外键约束
+                using (var cmd = new SQLiteCommand("PRAGMA foreign_keys = ON;", connection))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+                
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        // 删除所有标注
+                        using (var cmd = new SQLiteCommand("DELETE FROM user_labels", connection, transaction))
+                        {
+                            int labelsDeleted = cmd.ExecuteNonQuery();
+                            Console.WriteLine($"✓ 已删除 {labelsDeleted} 条标注记录");
+                        }
+                        
+                        // 删除所有 WL 结果
+                        using (var cmd = new SQLiteCommand("DELETE FROM wl_results", connection, transaction))
+                        {
+                            int wlDeleted = cmd.ExecuteNonQuery();
+                            Console.WriteLine($"✓ 已删除 {wlDeleted} 条 WL 结果记录");
+                        }
+                        
+                        // 删除所有 body（级联删除会自动处理）
+                        using (var cmd = new SQLiteCommand("DELETE FROM bodies", connection, transaction))
+                        {
+                            int bodiesDeleted = cmd.ExecuteNonQuery();
+                            Console.WriteLine($"✓ 已删除 {bodiesDeleted} 个 body 记录");
+                        }
+                        
+                        // 删除所有零件
+                        using (var cmd = new SQLiteCommand("DELETE FROM parts", connection, transaction))
+                        {
+                            int partsDeleted = cmd.ExecuteNonQuery();
+                            Console.WriteLine($"✓ 已删除 {partsDeleted} 个零件记录");
+                        }
+                        
+                        transaction.Commit();
+                        Console.WriteLine("✓ 数据库已完全清空");
+                    }
+                    catch (Exception ex)
+                    {
+                        transaction.Rollback();
+                        Console.WriteLine($"× 清空数据库失败：{ex.Message}");
+                        throw;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// 插入零件记录（不带 body）
         /// </summary>
         public int InsertPart(string partName, string filePath)
@@ -741,7 +840,7 @@ namespace tools
         }
 
         /// <summary>
-        /// 根据 WL 标签频率查找具有相似拓扑特征的 body 类别
+        /// 根据 WL 标签频率查找具有相似拓扑特征的 body 类别（使用指定迭代轮次）
         /// </summary>
         /// <param name="wlFrequencies">待查询零件的 WL 标签频率列表</param>
         /// <param name="topK">返回最相似的 K 个类别</param>
@@ -761,11 +860,17 @@ namespace tools
                 return results;
             }
 
+            // 使用最后一轮迭代进行比较
+            int queryIteration = wlFrequencies.Count - 1;
+            
+            Console.WriteLine($"\n[调试] 查询参数：minSimilarity={minSimilarity}, topK={topK}, iteration={queryIteration}");
+            Console.WriteLine($"[调试] 查询的 WL 频率：{JsonConvert.SerializeObject(wlFrequencies[queryIteration])}");
+
             using (var connection = new SQLiteConnection(_connectionString))
             {
                 connection.Open();
                 
-                // 获取所有已标注 body 及其 WL 结果
+                // 获取所有已标注 body 及其 WL 结果（使用相同的迭代轮次）
                 string query = @"
                     SELECT p.id, p.part_name, b.id, b.body_name, ul.label_category, ul.label_value, 
                            ul.confidence, ul.notes, wr.label_frequencies
@@ -773,56 +878,58 @@ namespace tools
                     INNER JOIN bodies b ON p.id = b.part_id
                     INNER JOIN wl_results wr ON b.id = wr.body_id
                     INNER JOIN user_labels ul ON b.id = ul.body_id
-                    WHERE wr.iteration = 0
+                    WHERE wr.iteration = @iteration
                     ORDER BY p.part_name, b.body_name";
 
                 var bodyData = new Dictionary<(string, string), BodyWLData>();
 
                 using (var cmd = new SQLiteCommand(query, connection))
-                using (var reader = cmd.ExecuteReader())
                 {
-                    while (reader.Read())
+                    cmd.Parameters.AddWithValue("@iteration", queryIteration);
+                    using (var reader = cmd.ExecuteReader())
                     {
-                        string partName = reader.GetString(1);
-                        string bodyName = reader.GetString(3);
-                        string category = reader.GetString(4);
-                        string value = reader.GetString(5);
-                        double confidence = reader.GetDouble(6);
-                        string notes = reader.IsDBNull(7) ? "" : reader.GetString(7);
-                        string freqJson = reader.GetString(8);
-
-                        var frequencies = JsonConvert.DeserializeObject<Dictionary<string, int>>(freqJson);
-                        
-                        if (frequencies == null)
+                        while (reader.Read())
                         {
-                            Console.WriteLine($"警告：无法解析 body {partName}/{bodyName} 的 WL 频率数据");
-                            continue;
-                        }
+                            string partName = reader.GetString(1);
+                            string bodyName = reader.GetString(3);
+                            string category = reader.GetString(4);
+                            string value = reader.GetString(5);
+                            double confidence = reader.GetDouble(6);
+                            string notes = reader.IsDBNull(7) ? "" : reader.GetString(7);
+                            string freqJson = reader.GetString(8);
 
-                        var key = (partName, bodyName);
-                        if (!bodyData.ContainsKey(key))
-                        {
-                            bodyData[key] = new BodyWLData();
-                        }
+                            var frequencies = JsonConvert.DeserializeObject<Dictionary<string, int>>(freqJson);
+                            
+                            if (frequencies == null)
+                            {
+                                Console.WriteLine($"警告：无法解析 body {partName}/{bodyName} 的 WL 频率数据");
+                                continue;
+                            }
 
-                        // 只添加一次 WL 频率
-                        if (bodyData[key].WLFreqs.Count == 0)
-                        {
+                            var key = (partName, bodyName);
+                            if (!bodyData.ContainsKey(key))
+                            {
+                                bodyData[key] = new BodyWLData();
+                            }
+
                             bodyData[key].WLFreqs.Add(frequencies);
+                            bodyData[key].Labels.Add(new LabelData(category, value, confidence, notes));
                         }
-
-                        bodyData[key].Labels.Add(new LabelData(category, value, confidence, notes));
                     }
                 }
 
                 // 计算与每个 body 的相似度
+                Console.WriteLine($"\n[调试] 从数据库加载了 {bodyData.Count} 个已标注 body");
+                
                 foreach (var kvp in bodyData)
                 {
                     string partName = kvp.Key.Item1;
                     string bodyName = kvp.Key.Item2;
                     BodyWLData data = kvp.Value;
                     
-                    double similarity = WLGraphKernel.CalculateSimilarity(wlFrequencies[0], data.WLFreqs[0]);
+                    double similarity = WLGraphKernel.CalculateSimilarity(wlFrequencies[queryIteration], data.WLFreqs[0]);
+                    
+                    Console.WriteLine($"[调试] {bodyName}: 相似度={similarity:F3} (阈值={minSimilarity})");
                     
                     if (similarity >= minSimilarity)
                     {
@@ -877,6 +984,160 @@ namespace tools
             return categoryGroups
                 .Select(x => (x.Category, x.Count, x.AvgSimilarity, x.AvgConfidence))
                 .ToList();
+        }
+
+        /// <summary>
+        /// 根据 WL 标签频率查找具有相似拓扑特征的 body 及其标注（直接返回标注信息）
+        /// </summary>
+        /// <param name="wlFrequencies">待查询零件的 WL 标签频率列表</param>
+        /// <param name="topK">返回最相似的 K 个结果</param>
+        /// <param name="minSimilarity">最小相似度阈值</param>
+        /// <returns>body 及其标注、相似度的列表</returns>
+        public List<(int PartId, string PartName, int BodyId, string BodyName, 
+                     string LabelCategory, string LabelValue, 
+                     double Similarity, double Confidence, string Notes)> 
+            FindBodiesByWLTags(
+                List<Dictionary<string, int>> wlFrequencies, 
+                int topK = 10, 
+                double minSimilarity = 0.3)
+        {
+            var results = new List<(int, string, int, string, string, string, double, double, string)>();
+            
+            if (wlFrequencies.Count == 0)
+            {
+                Console.WriteLine("警告：WL 频率数据为空");
+                return results;
+            }
+
+            // 使用最后一轮迭代进行比较
+            int queryIteration = wlFrequencies.Count - 1;
+            
+            Console.WriteLine($"\n[调试] 查询参数：minSimilarity={minSimilarity}, topK={topK}, iteration={queryIteration}");
+            Console.WriteLine($"[调试] 查询的 WL 频率：{JsonConvert.SerializeObject(wlFrequencies[queryIteration])}");
+
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 获取所有已标注 body 及其 WL 结果（使用相同的迭代轮次）
+                string query = @"
+                    SELECT p.id, p.part_name, b.id, b.body_name, ul.label_category, ul.label_value, 
+                           ul.confidence, ul.notes, wr.label_frequencies
+                    FROM parts p
+                    INNER JOIN bodies b ON p.id = b.part_id
+                    INNER JOIN wl_results wr ON b.id = wr.body_id
+                    INNER JOIN user_labels ul ON b.id = ul.body_id
+                    WHERE wr.iteration = @iteration
+                    ORDER BY p.part_name, b.body_name";
+
+                var bodyData = new Dictionary<(string, string), BodyWLData>();
+
+                using (var cmd = new SQLiteCommand(query, connection))
+                {
+                    cmd.Parameters.AddWithValue("@iteration", queryIteration);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            int partId = reader.GetInt32(0);
+                            string partName = reader.GetString(1);
+                            int bodyId = reader.GetInt32(2);
+                            string bodyName = reader.GetString(3);
+                            string category = reader.GetString(4);
+                            string value = reader.GetString(5);
+                            double confidence = reader.GetDouble(6);
+                            string notes = reader.IsDBNull(7) ? "" : reader.GetString(7);
+                            string freqJson = reader.GetString(8);
+
+                            var key = (partName, bodyName);
+                            if (!bodyData.ContainsKey(key))
+                            {
+                                bodyData[key] = new BodyWLData();
+                            }
+
+                            // 只取最后一轮迭代
+                            if (bodyData[key].WLFreqs.Count == 0)
+                            {
+                                bodyData[key].WLFreqs.Add(JsonConvert.DeserializeObject<Dictionary<string, int>>(freqJson)!);
+                            }
+
+                            bodyData[key].Labels.Add(new LabelData(category, value, confidence, notes));
+                        }
+                    }
+                }
+
+                // 计算与每个 body 的相似度
+                Console.WriteLine($"\n[调试] 从数据库加载了 {bodyData.Count} 个已标注 body");
+                
+                foreach (var kvp in bodyData)
+                {
+                    string partName = kvp.Key.Item1;
+                    string bodyName = kvp.Key.Item2;
+                    BodyWLData data = kvp.Value;
+                    
+                    double similarity = WLGraphKernel.CalculateSimilarity(wlFrequencies[queryIteration], data.WLFreqs[0]);
+                    
+                    Console.WriteLine($"[调试] {partName}+{bodyName}: 相似度={similarity:F3} (阈值={minSimilarity})");
+                    
+                    if (similarity >= minSimilarity)
+                    {
+                        // 获取该 body 对应的 part_id 和 body_id
+                        int partId = GetPartIdByName(partName);
+                        int bodyId = GetBodyId(partId, bodyName);
+                        
+                        foreach (var label in data.Labels)
+                        {
+                            results.Add((partId, partName, bodyId, bodyName, label.Category, label.Value, similarity, label.Confidence, label.Notes));
+                        }
+                    }
+                }
+
+                // 按相似度降序排序并取 Top-K
+                results = results
+                    .OrderByDescending(r => r.Item7)  // Similarity
+                    .ThenByDescending(r => r.Item8)  // Confidence
+                    .Take(topK)
+                    .ToList();
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// 根据零件名称获取零件 ID
+        /// </summary>
+        private int GetPartIdByName(string partName)
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                string query = "SELECT id FROM parts WHERE part_name = @part_name";
+                using (var cmd = new SQLiteCommand(query, connection))
+                {
+                    cmd.Parameters.AddWithValue("@part_name", partName);
+                    var result = cmd.ExecuteScalar();
+                    return result != null ? Convert.ToInt32(result) : -1;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 根据零件 ID 和 body 名称获取 body ID
+        /// </summary>
+        private int GetBodyId(int partId, string bodyName)
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                string query = "SELECT id FROM bodies WHERE part_id = @part_id AND body_name = @body_name";
+                using (var cmd = new SQLiteCommand(query, connection))
+                {
+                    cmd.Parameters.AddWithValue("@part_id", partId);
+                    cmd.Parameters.AddWithValue("@body_name", bodyName);
+                    var result = cmd.ExecuteScalar();
+                    return result != null ? Convert.ToInt32(result) : -1;
+                }
+            }
         }
     }
 }

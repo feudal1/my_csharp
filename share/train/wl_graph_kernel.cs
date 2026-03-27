@@ -12,39 +12,37 @@ namespace tools
     public static class WLGraphKernel
     {
         /// <summary>
-        /// 执行 WL 迭代，更新节点标签
+        /// 执行 WL 迭代，更新节点标签（返回所有轮次迭代结果）
         /// </summary>
         /// <param name="graph">零件图或 Body 图</param>
         /// <param name="iterations">迭代次数</param>
-        /// <returns>每次迭代后的标签频率列表</returns>
+        /// <returns>每次迭代后的标签频率列表（包含初始和所有迭代轮次）</returns>
         public static List<Dictionary<string, int>> PerformWLIterations(BodyGraph graph, int iterations = 1)
         {
             var labelFrequenciesPerIter = new List<Dictionary<string, int>>();
-            
+                    
             if (graph == null || graph.Nodes.Count == 0)
             {
                 Console.WriteLine("警告：空图，无法执行 WL 迭代");
                 return labelFrequenciesPerIter;
             }
-
+        
             // 初始化所有节点的标签
             foreach (var node in graph.Nodes)
             {
                 node.CurrentLabel = node.FaceType;
             }
-
+        
             // 统计初始迭代的标签频率 (迭代 0)
             var initialFreq = CountLabelFrequencies(graph);
             labelFrequenciesPerIter.Add(initialFreq);
-
+        
             Console.WriteLine($"  Body [{graph.BodyName}] 迭代 0: {initialFreq.Count} 种标签");
-
-            // 执行 WL 迭代
             for (int iter = 1; iter <= iterations; iter++)
             {
                 // 为每个节点生成新标签
                 var newLabels = new Dictionary<int, string>();
-                
+                        
                 foreach (var node in graph.Nodes)
                 {
                     // 收集邻居标签并排序
@@ -52,26 +50,44 @@ namespace tools
                         .Select(neighborId => graph.Nodes[neighborId].CurrentLabel)
                         .OrderBy(label => label)
                         .ToList();
-
+        
                     // 构造新标签：当前标签 + 排序后的邻居标签集合
                     string combinedLabel = CombineLabels(node.CurrentLabel, neighborLabels);
                     newLabels[node.Id] = combinedLabel;
                 }
-
+        
                 // 更新所有节点的标签
                 foreach (var node in graph.Nodes)
                 {
                     node.CurrentLabel = newLabels[node.Id];
                 }
-
+        
                 // 统计本次迭代的标签频率
                 var freq = CountLabelFrequencies(graph);
                 labelFrequenciesPerIter.Add(freq);
-                
+                        
                 Console.WriteLine($"  Body [{graph.BodyName}] 迭代 {iter}: {freq.Count} 种标签");
             }
-
+        
+            // 所有迭代完成后，生成最终的 WL 图指纹
+            PrintFirst20Chars(graph, $"完成");
+                    
+            // 返回所有迭代轮次的频率数据，由调用者决定如何使用
             return labelFrequenciesPerIter;
+        }
+
+        /// <summary>
+        /// 打印图中第一个节点的前 20 个字符标签
+        /// </summary>
+        private static void PrintFirst20Chars(BodyGraph graph, string iterInfo)
+        {
+            if (graph.Nodes.Count == 0) return;
+            
+            var firstNode = graph.Nodes[0];
+            string label = firstNode.CurrentLabel ?? "";
+            string displayText = label.Length <= 20 ? label : label.Substring(0, 20);
+            
+            Console.WriteLine($"    [{iterInfo}] 首个面标签前 20 字符：{displayText}");
         }
 
         /// <summary>
@@ -127,7 +143,7 @@ namespace tools
         }
 
         /// <summary>
-        /// 计算两个零件的相似度 (基于单次迭代的标签频率向量点积)
+        /// 计算两个零件的相似度（基于 WL 标签频率的余弦相似度）
         /// </summary>
         public static double CalculateSimilarity(
             Dictionary<string, int> freq1, 
@@ -137,7 +153,7 @@ namespace tools
             if (freq1.Count == 0 || freq2.Count == 0)
                 return 0.0;
 
-            // 获取所有标签的并集
+            // 直接使用传入的频率字典
             var allLabels = new HashSet<string>(freq1.Keys);
             allLabels.UnionWith(freq2.Keys);
 
@@ -175,6 +191,30 @@ namespace tools
                 
                 return dotProduct / maxProduct;
             }
+        }
+        
+        /// <summary>
+        /// 从规范化字符串解析频率字典
+        /// 格式："标签 1:次数 1|标签 2:次数 2|..."
+        /// </summary>
+        private static Dictionary<string, int> ParseCanonicalForm(string canonicalForm)
+        {
+            var result = new Dictionary<string, int>();
+            
+            if (string.IsNullOrEmpty(canonicalForm))
+                return result;
+            
+            var parts = canonicalForm.Split('|');
+            foreach (var part in parts)
+            {
+                var kv = part.Split(':');
+                if (kv.Length == 2 && int.TryParse(kv[1], out int count))
+                {
+                    result[kv[0]] = count;
+                }
+            }
+            
+            return result;
         }
 
         /// <summary>
