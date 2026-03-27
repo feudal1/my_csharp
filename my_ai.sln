@@ -8,8 +8,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ctool", "ctools\ctool.cspro
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "plugin", "plugin\plugin.csproj", "{5F4646E7-3F59-4D9A-923D-0F3E521818B2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "test", "test\test.csproj", "{6F2FCEC9-8B5F-440D-A60C-522BEA546857}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,10 +26,6 @@ Global
 		{5F4646E7-3F59-4D9A-923D-0F3E521818B2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5F4646E7-3F59-4D9A-923D-0F3E521818B2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5F4646E7-3F59-4D9A-923D-0F3E521818B2}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6F2FCEC9-8B5F-440D-A60C-522BEA546857}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6F2FCEC9-8B5F-440D-A60C-522BEA546857}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6F2FCEC9-8B5F-440D-A60C-522BEA546857}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6F2FCEC9-8B5F-440D-A60C-522BEA546857}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
