@@ -1,3 +1,4 @@
+//https://help.solidworks.com/2023/english/api/sldworksapi/SolidWorks.Interop.sldworks~SolidWorks.Interop.sldworks.ITableAnnotation_members.html
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using System;
@@ -52,11 +53,28 @@ namespace tools
 
                 // 获取 BOM 表注释信息
                 swTableAnnotation = (TableAnnotation)swBOMAnnotation;
+                
+                var colunmname = swTableAnnotation.GetColumnTitle2(2, false);
+                var deleteresult=swTableAnnotation.DeleteColumn2(2, false);
+                swModel.EditRebuild3();
+                Console.WriteLine($"deleteresult:{deleteresult},colunmname{colunmname}");
+                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,2,"生产类型",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
+                var count = swTableAnnotation.RowCount;
+                for (int i = 1; i <= count; i++)
+                {
+                  
+                     var partname = swTableAnnotation.get_Text(i, 1);
+                     Console.WriteLine($"partname:{partname}");
+                     
+                     swTableAnnotation.set_Text(i, 3, "机加件");
+                     
+                }
 
-
-
+               
+                
                 string excelpath = swModel.GetPathName().Replace("SLDASM", "xlsx");
-                swBOMAnnotation.SaveAsExcel(excelpath, true, true);
+                
+                swBOMAnnotation.SaveAsExcel(excelpath, false, true);
                 
                 // 启动 Excel 文件
                 ProcessStartInfo startInfo = new ProcessStartInfo(excelpath)

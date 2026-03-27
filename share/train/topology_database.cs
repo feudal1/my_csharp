@@ -156,6 +156,9 @@ namespace tools
         /// </summary>
         public List<int> UpsertPartWithBodies(string partName, string filePath, List<BodyGraph> bodyGraphs)
         {
+            // 去掉文件名后缀
+            string partNameWithoutExtension = System.IO.Path.GetFileNameWithoutExtension(partName);
+            
             using (var connection = new SQLiteConnection(_connectionString))
             {
                 connection.Open();
@@ -164,7 +167,7 @@ namespace tools
                     try
                     {
                         // 插入或更新零件信息
-                        int partId = GetOrCreatePart(connection, partName, filePath);
+                        int partId = GetOrCreatePart(connection, partNameWithoutExtension, filePath);
                         
                         var bodyIds = new List<int>();
                         
@@ -606,6 +609,72 @@ namespace tools
         }
 
         /// <summary>
+        /// 根据零件名获取所有标签并返回 join 后的字符串
+        /// </summary>
+        /// <param name="partName">零件名（不带后缀）</param>
+        /// <returns>所有标签的 join 字符串，格式：body1:label1=value1,label2=value2;body2:label3=value3</returns>
+        public string GetLabelsByPartName(string partName)
+        {
+            // 去掉文件名后缀
+            string partNameWithoutExtension = System.IO.Path.GetFileNameWithoutExtension(partName);
+            
+            var result = new System.Text.StringBuilder();
+            
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 查找零件
+                string selectPart = "SELECT id FROM parts WHERE part_name = @part_name";
+                using (var cmd = new SQLiteCommand(selectPart, connection))
+                {
+                    cmd.Parameters.AddWithValue("@part_name", partNameWithoutExtension);
+                    var partIdObj = cmd.ExecuteScalar();
+                    if (partIdObj == null)
+                    {
+                        return string.Empty; // 零件不存在
+                    }
+                    
+                    int partId = Convert.ToInt32(partIdObj);
+                    
+                    // 获取该零件的所有 body
+                    string selectBodies = "SELECT id, body_name FROM bodies WHERE part_id = @part_id ORDER BY body_name";
+                    using (var cmd2 = new SQLiteCommand(selectBodies, connection))
+                    {
+                        cmd2.Parameters.AddWithValue("@part_id", partId);
+                        using (var reader = cmd2.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                int bodyId = reader.GetInt32(0);
+                                string bodyName = reader.GetString(1);
+                                
+                                // 获取该 body 的所有最新标注
+                                var labels = GetLatestLabels(connection, bodyId);
+                                
+                                if (labels.Count > 0)
+                                {
+                                    if (result.Length > 0)
+                                    {
+                                        result.Append(";");
+                                    }
+                                    
+                                    result.Append(bodyName);
+                                    result.Append(":");
+                                    
+                                    var labelPairs = labels.Select(kvp => $"{kvp.Key}={kvp.Value}");
+                                    result.Append(string.Join(",", labelPairs));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return result.ToString();
+        }
+
+        /// <summary>
         /// 统计数据库信息
         /// </summary>
         public (int PartCount, int BodyCount, int LabelCount, Dictionary<string, int> CategoryStats) GetStatistics()
@@ -804,6 +873,9 @@ namespace tools
         /// </summary>
         public int InsertPart(string partName, string filePath)
         {
+            // 去掉文件名后缀
+            string partNameWithoutExtension = System.IO.Path.GetFileNameWithoutExtension(partName);
+            
             using (var connection = new SQLiteConnection(_connectionString))
             {
                 connection.Open();
@@ -812,7 +884,7 @@ namespace tools
                 string select = "SELECT id FROM parts WHERE part_name = @part_name AND file_path = @file_path";
                 using (var cmd = new SQLiteCommand(select, connection))
                 {
-                    cmd.Parameters.AddWithValue("@part_name", partName);
+                    cmd.Parameters.AddWithValue("@part_name", partNameWithoutExtension);
                     cmd.Parameters.AddWithValue("@file_path", filePath);
                     var result = cmd.ExecuteScalar();
                     if (result != null)
@@ -828,7 +900,7 @@ namespace tools
                 
                 using (var cmd = new SQLiteCommand(insert, connection))
                 {
-                    cmd.Parameters.AddWithValue("@part_name", partName);
+                    cmd.Parameters.AddWithValue("@part_name", partNameWithoutExtension);
                     cmd.Parameters.AddWithValue("@file_path", filePath);
                     cmd.ExecuteNonQuery();
                     
@@ -1104,17 +1176,20 @@ namespace tools
         }
 
         /// <summary>
-        /// 根据零件名称获取零件 ID
+        /// 根据零件名获取零件 ID
         /// </summary>
         private int GetPartIdByName(string partName)
         {
+            // 去掉文件名后缀
+            string partNameWithoutExtension = System.IO.Path.GetFileNameWithoutExtension(partName);
+                    
             using (var connection = new SQLiteConnection(_connectionString))
             {
                 connection.Open();
                 string query = "SELECT id FROM parts WHERE part_name = @part_name";
                 using (var cmd = new SQLiteCommand(query, connection))
                 {
-                    cmd.Parameters.AddWithValue("@part_name", partName);
+                    cmd.Parameters.AddWithValue("@part_name", partNameWithoutExtension);
                     var result = cmd.ExecuteScalar();
                     return result != null ? Convert.ToInt32(result) : -1;
                 }
