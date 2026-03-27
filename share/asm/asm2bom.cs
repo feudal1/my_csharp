@@ -18,8 +18,7 @@ namespace tools
                     return -1;
                 }
 
-                var partname = Path.GetFileNameWithoutExtension(swModel.GetPathName());
-                Debug.WriteLine($"正在处理装配体：{partname}");
+            
 
                 ModelDocExtension swModelDocExt = (ModelDocExtension)swModel.Extension;
                 BomTableAnnotation swBOMAnnotation;
@@ -30,24 +29,19 @@ namespace tools
                 // 使用默认的 BOM 模板路径
                 tableTemplate = "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\lang\\chinese-simplified\\bom-standard.sldbomtbt";
                 
-                // 如果默认模板不存在，尝试英文模板
-                if (!System.IO.File.Exists(tableTemplate))
-                {
-                    tableTemplate = "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\lang\\english\\bom-standard.sldbomtbt";
-                }
-
+                string Configuration = swApp.GetActiveConfigurationName(swModel.GetPathName());
                 // 插入缩进式 BOM 表
                 bomType = (int)swBomType_e.swBomType_Indented;
                 
                 swBOMAnnotation = (BomTableAnnotation)swModelDocExt.InsertBomTable3(
                     tableTemplate, 
-                    0, 
-                    1, 
+                    1260, 
+                    556, 
                     bomType, 
-                    "Default", 
-                    false, 
-                    (int)swNumberingType_e.swNumberingType_Detailed, 
-                    true
+                    Configuration, 
+                    true, 
+                    0, 
+                    false
                 );
 
                 if (swBOMAnnotation == null)
@@ -58,26 +52,19 @@ namespace tools
 
                 // 获取 BOM 表注释信息
                 swTableAnnotation = (TableAnnotation)swBOMAnnotation;
-                
-                Console.WriteLine($"\n========== BOM 表信息 ==========");
-                Console.WriteLine($"装配体：{partname}");
-                
-                // 输出列标题信息（通过尝试获取列标题来确认列数）
-                int columnCount = 0;
-                for (int i = 0; i < 50; i++) // 尝试最多 50 列
-                {
-                    string columnTitle = swTableAnnotation.GetColumnTitle(i);
-                    if (string.IsNullOrEmpty(columnTitle))
-                    {
-                        break;
-                    }
-                    columnCount++;
-                    Console.WriteLine($"  列 {i}: {columnTitle}");
-                }
-                
-                Console.WriteLine($"BOM 表列数：{columnCount}");
-                Console.WriteLine("====================================\n");
 
+
+
+                string excelpath = swModel.GetPathName().Replace("SLDASM", "xlsx");
+                swBOMAnnotation.SaveAsExcel(excelpath, true, true);
+                
+                // 启动 Excel 文件
+                ProcessStartInfo startInfo = new ProcessStartInfo(excelpath)
+                {
+                    UseShellExecute = true
+                };
+                Process.Start(startInfo);
+                
                 return 0;
             }
             catch (Exception ex)
