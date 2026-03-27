@@ -1,5 +1,5 @@
 ﻿=== SolidWorks 自动化命令列表 ===
-更新时间：2026-03-26 17:56:32
+更新时间：2026-03-27 09:04:43
 3. 执行前需用户确认 (y/n/auto)
 
 
@@ -89,6 +89,10 @@
 
 【solidworks】folderdrw2dwg 
     说明：批量转换文件夹内工程图为 DWG 格式
+    参数：无
+
+【solidworks】get_all_body_names 
+    说明：获取当前零件的所有 body 名称
     参数：无
 
 【cad】get_all_dim_style 

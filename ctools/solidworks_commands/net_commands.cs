@@ -48,7 +48,7 @@ namespace tools
             Console.WriteLine($"\n零件包含 {bodyIds.Count} 个 body:");
             for (int i = 0; i < bodyIds.Count; i++)
             {
-                Console.WriteLine($"  [{i}] {graphs[i].BodyName} ({graphs[i].Nodes.Count} 个面)");
+                Console.WriteLine($"  [{i}] {graphs[i].FullBodyName} ({graphs[i].Nodes.Count} 个面)");
             }
 
             // 检查参数
@@ -66,15 +66,30 @@ namespace tools
             string bodyName = args[0];
             string value = args[1];
 
-            // 精确匹配（忽略大小写和首尾空格）
+            // 精确匹配（忽略大小写和首尾空格）- 支持完整名称或部分名称
             int targetIndex = -1;
             string normalizedInput = bodyName.Trim().ToLower();
+            
+            // 优先尝试匹配完整名称（FullBodyName）
             for (int i = 0; i < graphs.Count; i++)
             {
-                if (graphs[i].BodyName.Trim().ToLower() == normalizedInput)
+                if (graphs[i].FullBodyName.Trim().ToLower() == normalizedInput)
                 {
                     targetIndex = i;
                     break;
+                }
+            }
+            
+            // 如果完整名称匹配失败，尝试只匹配 body 名称部分
+            if (targetIndex == -1)
+            {
+                for (int i = 0; i < graphs.Count; i++)
+                {
+                    if (graphs[i].BodyName.Trim().ToLower() == normalizedInput)
+                    {
+                        targetIndex = i;
+                        break;
+                    }
                 }
             }
 
@@ -84,9 +99,9 @@ namespace tools
                 Console.WriteLine("\n可用的 body 名称有:");
                 for (int i = 0; i < graphs.Count; i++)
                 {
-                    Console.WriteLine($"  [{i}] {graphs[i].BodyName}");
+                    Console.WriteLine($"  [{i}] {graphs[i].FullBodyName} (原始：{graphs[i].BodyName})");
                 }
-                Console.WriteLine("\n提示：请按正确的 body 名称重新标注，可以从上面列表中复制。");
+                Console.WriteLine("\n提示：可以使用完整名称（零件名+Body 名）或仅 Body 名称进行匹配。");
                 return;
             }
 
@@ -103,13 +118,13 @@ namespace tools
         /// </summary>
         static void AddAndShowLabel(TopologyDatabase database, int bodyId, BodyGraph graph, string value, int bodyIndex)
         {
-            // 使用 body 名称作为类别（自动推断）
-            string category = graph.BodyName;
+            // 使用完整 body 名称作为类别（partname+bodyname）
+            string category = graph.FullBodyName;
                     
             database.AddLabel(bodyId, category, value, confidence: 1.0, notes: "LLM 自动标注");
                     
             Console.WriteLine($"\n✓ 标注已添加:");
-            Console.WriteLine($"  Body: {graph.BodyName}");
+            Console.WriteLine($"  Body: {graph.FullBodyName}");
             Console.WriteLine($"  值：{value}");
         
             // 显示该 body 的所有标注
@@ -178,9 +193,9 @@ namespace tools
                     
             for (int i = 0; i < bodyIds.Count; i++)
             {
-                string category = $"{partName}_Body{i}"; // 使用零件名 + 索引作为类别
+                string category = $"{graphs[i].FullBodyName}"; // 使用完整 body 名称作为类别
                 database.AddLabel(bodyIds[i], category, value, confidence: 1.0, notes: "批量标注");
-                Console.WriteLine($"  ✓ Body [{i}] {graphs[i].BodyName} → {value}");
+                Console.WriteLine($"  ✓ Body [{i}] {graphs[i].FullBodyName} → {value}");
             }
         
             Console.WriteLine($"\n✓ 成功标注 {bodyIds.Count} 个 body");

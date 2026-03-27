@@ -12,13 +12,21 @@ namespace tools
     public static class TopologyLabeler
     {
         private static TopologyDatabase? _database;
-        private static readonly string DefaultDbPath = "topology_labels.db";
+        private static readonly string DefaultDbPath = @"E:\my_data\topology_labels.db";
 
         /// <summary>
         /// 初始化数据库
         /// </summary>
         public static void Initialize(string? dbPath = null)
         {
+            // 确保数据库目录存在
+            string dbDirectory = System.IO.Path.GetDirectoryName(dbPath ?? DefaultDbPath);
+            if (!string.IsNullOrEmpty(dbDirectory) && !System.IO.Directory.Exists(dbDirectory))
+            {
+                System.IO.Directory.CreateDirectory(dbDirectory);
+                Console.WriteLine($"✓ 已创建数据库目录：{dbDirectory}");
+            }
+            
             _database = new TopologyDatabase(dbPath ?? DefaultDbPath);
             Console.WriteLine("✓ 拓扑标注系统已初始化");
         }
@@ -164,7 +172,7 @@ namespace tools
             
             foreach (var (partId, partName, bodyId, bodyName, labels) in bodies)
             {
-                Console.WriteLine($"[{partId}] {partName} / Body: {bodyName}");
+                Console.WriteLine($"[{partId}] {bodyName}");
                 
                 if (labels.Count > 0)
                 {
@@ -200,7 +208,7 @@ namespace tools
             
             foreach (var (partId, partName, bodyId, bodyName, labelValue) in results)
             {
-                Console.WriteLine($"[{partId}] {partName} / Body:{bodyName} => {labelValue}");
+                Console.WriteLine($"[{partId}] {bodyName} => {labelValue}");
             }
         }
 
@@ -467,7 +475,7 @@ namespace tools
             for (int i = 0; i < detailedResults.Count; i++)
             {
                 var (category, partName, bodyName, similarity, confidence, notes) = detailedResults[i];
-                Console.WriteLine($"[{i + 1}] 零件：{partName} / Body: {bodyName}");
+                Console.WriteLine($"[{i + 1}] {bodyName}");
                 Console.WriteLine($"    类别：{category}");
                 Console.WriteLine($"    相似度：{similarity:F3} ({similarity * 100:F1}%)");
                 Console.WriteLine($"    置信度：{confidence:F2}");

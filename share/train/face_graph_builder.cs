@@ -30,7 +30,8 @@ namespace tools
     public class BodyGraph
     {
         public string PartName { get; set; } = "";       // 零件名称
-        public string BodyName { get; set; } = "";       // Body 名称
+        public string BodyName { get; set; } = "";       // Body 名称（原始名称）
+        public string FullBodyName { get; set; } = "";   // 完整 Body 名称（PartName+BodyName）
         public List<FaceNode> Nodes { get; set; }        // 节点列表
         public Dictionary<string, int> LabelFrequency { get; set; }  // 标签频率统计
         
@@ -98,8 +99,12 @@ namespace tools
         private static BodyGraph BuildSingleBodyGraph(ModelDoc2 swModel, Body2 body)
         {
             BodyGraph graph = new BodyGraph();
-            graph.PartName = swModel.GetTitle();
-            graph.BodyName = body.Name;  // 使用 body 的名称
+            // 获取零件名并过滤扩展名
+            string partName = swModel.GetTitle();
+            string partNameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(partName);
+            graph.PartName = partNameWithoutExt;
+            graph.BodyName = body.Name;
+            graph.FullBodyName = $"{graph.PartName}+{graph.BodyName}";  // 组合名称：零件名（无扩展名）+Body 名
 
             // 存储邻接关系的字典：面索引 -> 邻居面索引集合
             var adjacencyDict = new Dictionary<int, HashSet<int>>();

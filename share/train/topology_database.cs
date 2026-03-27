@@ -171,7 +171,7 @@ namespace tools
                         // 处理每个 body
                         foreach (var bodyGraph in bodyGraphs)
                         {
-                            int bodyId = GetOrCreateBody(connection, partId, bodyGraph.BodyName);
+                            int bodyId = GetOrCreateBody(connection, partId, bodyGraph.FullBodyName);
                             
                             // 删除该 body 旧的 WL 结果
                             string deleteOld = "DELETE FROM wl_results WHERE body_id = @body_id";
@@ -196,7 +196,7 @@ namespace tools
                             }
                             
                             bodyIds.Add(bodyId);
-                            Console.WriteLine($"✓ Body '{bodyGraph.BodyName}' 已存入数据库 ({bodyGraph.Nodes.Count} 个面)");
+                            Console.WriteLine($"✓ Body '{bodyGraph.FullBodyName}' 已存入数据库 ({bodyGraph.Nodes.Count} 个面)");
                         }
 
                         transaction.Commit();
