@@ -39,6 +39,19 @@ namespace tools
                 }
                 
                 _commands[commandInfo.Name.ToLower()] = commandInfo;
+                
+                // 注册别名
+                if (commandInfo.Aliases != null)
+                {
+                    foreach (var alias in commandInfo.Aliases)
+                    {
+                        if (!string.IsNullOrEmpty(alias))
+                        {
+                            _commands[alias.ToLower()] = commandInfo;
+                            Console.WriteLine($"[调试] 注册命令别名：{alias} -> {commandInfo.Name}");
+                        }
+                    }
+                }
             }
         }
         
@@ -152,6 +165,7 @@ namespace tools
                 Description = attr.Description,
                 Parameters = attr.Parameters,
                 Group = attr.Group,
+                Aliases = attr.Aliases,
                 CommandType = isAsyncTask ? CommandType.Async : CommandType.Sync,
                 AsyncAction = async (args) =>
                 {
@@ -194,6 +208,7 @@ namespace tools
                 Description = attr.Description,
                 Parameters = attr.Parameters,
                 Group = attr.Group,
+                Aliases = attr.Aliases,
                 CommandType = isAsyncTask ? CommandType.Async : CommandType.Sync,
                 AsyncAction = async (args) =>
                 {

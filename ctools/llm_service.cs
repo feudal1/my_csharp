@@ -26,6 +26,7 @@ namespace tools
         private readonly string _shotMemoryFile;
         private readonly string _logFilePath;
         private readonly string _worksKnowledgeFile;
+        private readonly string _runLogFilePath;
         private readonly Func<string>? _getCommandsDescriptionFunc;
 
         public LlmService(Func<string>? getCommandsDescriptionFunc = null)
@@ -45,6 +46,7 @@ namespace tools
             _shotMemoryFile = Path.Combine(llmDir, "shot_memory.json");
       _logFilePath = Path.Combine(llmDir, "longterm_memory.txt");
             _worksKnowledgeFile = Path.Combine(llmDir, "works_knowledge.txt");
+            _runLogFilePath = Path.Combine(llmDir, "run_log.txt");
             _getCommandsDescriptionFunc = getCommandsDescriptionFunc;
             
         
@@ -354,23 +356,83 @@ namespace tools
         }
 
         /// <summary>
-        /// 构建 System Prompt（精简版，不包含命令格式说明）
+        /// 构建 System Prompt（精简版）
         /// </summary>
         private string BuildSystemPrompt()
         {
             var sysPrompt = new StringBuilder();
 
-            sysPrompt.AppendLine("你是一个 SolidWorks 自动化助手，可以帮助用户执行各种 SolidWorks 操作。");
-            
-            // 添加 works_knowledge.txt 的内容
-            var worksKnowledge = ReadWorksKnowledge();
-            if (!string.IsNullOrEmpty(worksKnowledge))
-            {
-                sysPrompt.AppendLine("\n***工作知识与规范:***");
-                sysPrompt.AppendLine(worksKnowledge);
-            }
+            sysPrompt.AppendLine("你是一个猫娘 SolidWorks 自动化助手，可以帮助用户执行各种 SolidWorks 操作。");
+            sysPrompt.AppendLine("性格特点：活泼可爱，说话结尾会带'喵'字。");
+            sysPrompt.AppendLine("交流方式：使用可爱的语气，每句话结尾都要加上'喵'或'喵~'");
 
             return sysPrompt.ToString();
+        }
+
+        /// <summary>
+        /// 读取最近的运行日志（指定字符数）
+        /// </summary>
+        private string ReadRecentRunLog(int charCount)
+        {
+            try
+            {
+                if (File.Exists(_runLogFilePath))
+                {
+                    var fileInfo = new FileInfo(_runLogFilePath);
+                    if (fileInfo.Length == 0)
+                    {
+                        return "";
+                    }
+                    
+                    using var fs = new FileStream(
+                        _runLogFilePath, 
+                        FileMode.Open, 
+                        FileAccess.Read, 
+                        FileShare.ReadWrite,
+                        bufferSize: 4096
+                    );
+                    var buffer = new byte[Math.Min(fileInfo.Length, charCount * 3)]; // 预留空间给多字节字符
+                    int bytesRead;
+                    int totalBytesRead = 0;
+                    
+                    // 从文件末尾向前读取
+                    while ((bytesRead = fs.Read(buffer, totalBytesRead, buffer.Length - totalBytesRead)) > 0)
+                    {
+                        totalBytesRead += bytesRead;
+                        if (totalBytesRead >= charCount * 2) // 至少读取足够的字节
+                        {
+                            break;
+                        }
+                    }
+                    
+                    if (totalBytesRead == 0)
+                    {
+                        return "";
+                    }
+                    
+                    // 转换为字符串并取最后 charCount 个字符
+                    string content = Encoding.UTF8.GetString(buffer, 0, totalBytesRead);
+                    if (content.Length > charCount)
+                    {
+                        content = content.Substring(content.Length - charCount);
+                    }
+                    
+                    // 清理不完整的行，从第一个完整行开始
+                    int firstNewLine = content.IndexOf('\n');
+                    if (firstNewLine >= 0 && firstNewLine < content.Length - 1)
+                    {
+                        content = content.Substring(firstNewLine + 1);
+                    }
+                    
+                    return content.Trim();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"读取运行日志失败：{ex.Message}");
+            }
+            
+            return "";
         }
 
         /// <summary>
@@ -417,6 +479,24 @@ namespace tools
                 sysPrompt += searchResult;
             }
             
+            // 读取最近运行日志并更新/添加到记忆中
+            string recentLog = ReadRecentRunLog(500);
+            if (!string.IsNullOrEmpty(recentLog))
+            {
+                // 查找是否已存在运行日志条目
+                var existingLogMessage = messages.FirstOrDefault(m => m.Role == "runlog");
+                if (existingLogMessage != null)
+                {
+                    // 更新现有的运行日志
+                    existingLogMessage.Content = recentLog;
+                }
+                else
+                {
+                    // 添加新的运行日志条目
+                    messages.Add(new ChatMessage { Role = "runlog", Content = recentLog });
+                }
+            }
+            
             // 构建完整的消息列表
             var messagesWithSystem = new List<ChatMessage>
             {
@@ -439,6 +519,7 @@ namespace tools
             
             // 保存助手回复到消息历史
             messages.Add(new ChatMessage { Role = "assistant", Content = fullResponse });
+            
             SaveMessagesToDisk(messages);
             
             // 保存长期记忆
@@ -468,17 +549,19 @@ namespace tools
                     
             // 构建 system prompt（不包含命令列表）
             var sysPrompt = BuildSystemPrompt();
-                    
-            // 构建消息列表
-            var messagesWithSystem = new List<ChatMessage>
+            
+            // 构建消息列表（用于发送给 LLM）
+            var messagesForLLM = new List<ChatMessage>
             {
                 new ChatMessage { Role = "system", Content = sysPrompt.ToString() }
             };
-            messagesWithSystem.AddRange(messages);
+            
+            // 添加历史消息
+            messagesForLLM.AddRange(messages);
                     
             var startTime = DateTime.Now;
             var (response, toolCalls) = await CallStreamingWithToolsAsync(
-                messagesWithSystem, 
+                messagesForLLM, 
                 userPrompt, 
                 filteredTools,  // 只传递筛选后的工具
                 apiKey, 
@@ -491,7 +574,7 @@ namespace tools
             // 保存用户输入到消息历史
             messages.Add(new ChatMessage { Role = "user", Content = userPrompt });
                     
-            // 保存助手回复
+            // 如果有回复内容，保存助手回复
             if (!string.IsNullOrEmpty(response))
             {
                 messages.Add(new ChatMessage { Role = "assistant", Content = response });
@@ -535,7 +618,18 @@ namespace tools
                     {
                         Name = "no_matching_command_found",
                         Description = "提示：未在命令库中找到与用户问题直接相关的命令。请根据用户的实际需求，从可用工具中选择最接近的功能，或者询问用户更具体的需求。",
-                        Parameters = new FunctionParameters()
+                        Parameters = new FunctionParameters
+                        {
+                            Properties = new Dictionary<string, PropertyDefinition>
+                            {
+                                ["reason"] = new PropertyDefinition 
+                                { 
+                                    Type = "string", 
+                                    Description = "说明为什么现有工具无法满足用户需求" 
+                                }
+                            },
+                            Required = new List<string>()
+                        }
                     }
                 };
                         
@@ -886,19 +980,37 @@ EndStream:
                 model = model,
                 stream = false, // Tool 调用不使用流式
                 messages = messagesWithUser.ToArray(),
-                tools = tools.Select(t => new
+                tools = tools.Select(t => 
                 {
-                    type = t.Type,
-                    function = new
+                    // 如果 parameters 是空的 FunctionParameters，序列化为空对象
+                    var parametersObj = t.Function.Parameters;
+                    if (parametersObj is FunctionParameters fp && 
+                        fp.Properties != null && fp.Properties.Count == 0)
                     {
-                        name = t.Function.Name,
-                        description = t.Function.Description,
-                        parameters = t.Function.Parameters
+                        // 对于没有参数的函数，使用空对象而不是空的 FunctionParameters
+                        parametersObj = new { type = "object", properties = new object() };
                     }
+                    
+                    return new
+                    {
+                        type = t.Type,
+                        function = new
+                        {
+                            name = t.Function.Name,
+                            description = t.Function.Description,
+                            parameters = parametersObj
+                        }
+                    };
                 }).ToArray()
             };
             
+            // 【调试断点】在这里检查请求体内容
             string jsonBody = JsonConvert.SerializeObject(requestBody);
+            System.Diagnostics.Debug.WriteLine($"\n【调试】Tool 调用请求 JSON:");
+            System.Diagnostics.Debug.WriteLine(jsonBody);
+            System.IO.File.WriteAllText("debug_tool_request.json", jsonBody, Encoding.UTF8);
+            System.Diagnostics.Debug.WriteLine($"[调试] 请求 JSON 已保存到 debug_tool_request.json");
+            
             using var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
             
             _httpClient!.DefaultRequestHeaders.Clear();
@@ -912,8 +1024,18 @@ EndStream:
             };
             
             Console.WriteLine($"\n[调试] 发送 Tool 调用请求到：{ApiUrl}");
+            Console.WriteLine($"[调试] 工具数量：{tools.Count}");
+            Console.WriteLine($"[调试] 消息数量：{messagesWithUser.Count}");
             
-            var response = await _httpClient.SendAsync(request);
+            // 【调试断点】发送请求前
+            var httpRequest = new HttpRequestMessage
+            {
+                Method = HttpMethod.Post,
+                RequestUri = new Uri(ApiUrl),
+                Content = content
+            };
+            
+            var response = await _httpClient.SendAsync(httpRequest);
             response.EnsureSuccessStatusCode();
             
             var responseJson = await response.Content.ReadAsStringAsync();

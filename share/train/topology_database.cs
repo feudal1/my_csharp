@@ -57,6 +57,7 @@ namespace tools
             _dbPath = dbPath;
             _connectionString = $"Data Source={dbPath};Version=3;";
             InitializeDatabase();
+            UpgradeDatabase(); // 升级数据库表结构
         }
 
         /// <summary>
@@ -107,7 +108,7 @@ namespace tools
                         UNIQUE(body_id, iteration)
                     );";
 
-                // 创建用户标注表
+                // 创建用户标注表（添加唯一性约束，防止同一个 body 的同一类别有多个标注）
                 string createLabelsTable = @"
                     CREATE TABLE IF NOT EXISTS user_labels (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,7 +118,8 @@ namespace tools
                         confidence REAL DEFAULT 1.0,
                         notes TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (body_id) REFERENCES bodies(id) ON DELETE CASCADE
+                        FOREIGN KEY (body_id) REFERENCES bodies(id) ON DELETE CASCADE,
+                        UNIQUE(body_id, label_category)
                     );";
 
                 // 创建索引
@@ -148,6 +150,63 @@ namespace tools
                 }
 
                 Console.WriteLine($"数据库初始化完成：{_dbPath}");
+            }
+        }
+
+        /// <summary>
+        /// 升级数据库表结构（添加唯一性约束）
+        /// </summary>
+        private void UpgradeDatabase()
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 检查 user_labels 表是否已有唯一性约束
+                string checkConstraint = @"
+                    SELECT COUNT(*) FROM sqlite_master 
+                    WHERE type='index' AND name='idx_unique_body_category'
+                    AND tbl_name='user_labels'";
+                
+                using (var cmd = new SQLiteCommand(checkConstraint, connection))
+                {
+                    var result = cmd.ExecuteScalar();
+                    bool needsUpgrade = Convert.ToInt32(result) == 0;
+                    
+                    if (needsUpgrade)
+                    {
+                        Console.WriteLine("正在升级数据库表结构...");
+                        
+                        // 先清理重复数据，保留每个 (body_id, label_category) 组合中最新的一条
+                        string cleanupDuplicates = @"
+                            DELETE FROM user_labels 
+                            WHERE id NOT IN (
+                                SELECT MAX(id) 
+                                FROM user_labels 
+                                GROUP BY body_id, label_category
+                            )";
+                        
+                        using (var cmdCleanup = new SQLiteCommand(cleanupDuplicates, connection))
+                        {
+                            int deletedCount = cmdCleanup.ExecuteNonQuery();
+                            if (deletedCount > 0)
+                            {
+                                Console.WriteLine($"✓ 已清理 {deletedCount} 条重复标注记录");
+                            }
+                        }
+                        
+                        // 创建唯一索引
+                        string createUniqueIndex = @"
+                            CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_body_category 
+                            ON user_labels(body_id, label_category)";
+                        
+                        using (var cmdIndex = new SQLiteCommand(createUniqueIndex, connection))
+                        {
+                            cmdIndex.ExecuteNonQuery();
+                            Console.WriteLine("✓ 已添加唯一性约束：(body_id, label_category)");
+                        }
+                    }
+                }
             }
         }
 
@@ -293,6 +352,7 @@ namespace tools
 
         /// <summary>
         /// 添加用户标注（body 级别）
+        /// 注意：同一个 label_category 只能对应一个 label_value，新的标注会覆盖旧的标注
         /// </summary>
         public void AddLabel(int bodyId, string category, string value, double confidence = 1.0, string? notes = null)
         {
@@ -300,6 +360,16 @@ namespace tools
             {
                 connection.Open();
                 
+                // 先删除该 category 的旧标注（实现覆盖逻辑）
+                string deleteOld = "DELETE FROM user_labels WHERE body_id = @body_id AND label_category = @category";
+                using (var cmd = new SQLiteCommand(deleteOld, connection))
+                {
+                    cmd.Parameters.AddWithValue("@body_id", bodyId);
+                    cmd.Parameters.AddWithValue("@category", category);
+                    cmd.ExecuteNonQuery();
+                }
+                
+                // 插入新标注
                 string insert = @"
                     INSERT INTO user_labels (body_id, label_category, label_value, confidence, notes)
                     VALUES (@body_id, @category, @value, @confidence, @notes)";
@@ -612,18 +682,18 @@ namespace tools
         /// 根据零件名获取所有标签并返回 join 后的字符串
         /// </summary>
         /// <param name="partName">零件名（不带后缀）</param>
-        /// <returns>所有标签的 join 字符串，格式：body1:label1=value1,label2=value2;body2:label3=value3</returns>
+        /// <returns>所有标签的 join 字符串，格式：bodyName1,label1;bodyName2,label2</returns>
         public string GetLabelsByPartName(string partName)
         {
             // 去掉文件名后缀
-            string partNameWithoutExtension = System.IO.Path.GetFileNameWithoutExtension(partName);
-            
+            string partNameWithoutExtension = partName;
+                    
             var result = new System.Text.StringBuilder();
-            
+                    
             using (var connection = new SQLiteConnection(_connectionString))
             {
                 connection.Open();
-                
+                        
                 // 查找零件
                 string selectPart = "SELECT id FROM parts WHERE part_name = @part_name";
                 using (var cmd = new SQLiteCommand(selectPart, connection))
@@ -634,43 +704,45 @@ namespace tools
                     {
                         return string.Empty; // 零件不存在
                     }
-                    
+                            
                     int partId = Convert.ToInt32(partIdObj);
-                    
+                            
                     // 获取该零件的所有 body
                     string selectBodies = "SELECT id, body_name FROM bodies WHERE part_id = @part_id ORDER BY body_name";
+                      
                     using (var cmd2 = new SQLiteCommand(selectBodies, connection))
                     {
                         cmd2.Parameters.AddWithValue("@part_id", partId);
+                                  
                         using (var reader = cmd2.ExecuteReader())
                         {
                             while (reader.Read())
                             {
                                 int bodyId = reader.GetInt32(0);
                                 string bodyName = reader.GetString(1);
-                                
+                                        
                                 // 获取该 body 的所有最新标注
                                 var labels = GetLatestLabels(connection, bodyId);
-                                
+                                    
                                 if (labels.Count > 0)
                                 {
-                                    if (result.Length > 0)
+                                    foreach (var label in labels.Values)
                                     {
-                                        result.Append(";");
+                                        if (result.Length > 0)
+                                        {
+                                            result.Append(";");
+                                        }
+                                                
+                                        // 格式：bodyName,label
+                                        result.Append($"{bodyName},{label}");
                                     }
-                                    
-                                    result.Append(bodyName);
-                                    result.Append(":");
-                                    
-                                    var labelPairs = labels.Select(kvp => $"{kvp.Key}={kvp.Value}");
-                                    result.Append(string.Join(",", labelPairs));
                                 }
                             }
                         }
                     }
                 }
             }
-            
+                    
             return result.ToString();
         }
 

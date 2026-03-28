@@ -1,5 +1,5 @@
 ﻿=== SolidWorks 自动化命令列表 ===
-更新时间：2026-03-27 13:38:31
+更新时间：2026-03-28 14:22:22
 3. 执行前需用户确认 (y/n/auto)
 
 
@@ -67,17 +67,13 @@
     说明：导出当前零件展开为 DWG 文件（版本 2）
     参数：无
 
-【train】find_category 
-    说明：查询当前零件的相似零件（基于 WL 图核相似度匹配），查询每个 body 相似的body
-    参数：[可选的：迭代次数，默认 1] [可选的：返回数量，默认 5]
-
-【train】find_labels_by_wl 
-    说明：查询当前零件的标签，分类，使用 WL 拓扑标签查找具有相似特征的用户标注（直接匹配 body 的标注）
+【train】find_similar_labels 
+    说明：查询当前零件的相似标注，使用 WL 拓扑标签查找具有相似特征的用户标注（匹配 body 级别的标注）
     参数：[可选的：迭代次数，默认 1] [可选的：返回数量，默认 10] [可选的：最小相似度，默认 0.3]
 
-【cad】folder_with_subfolders_draw_divider 
-    说明：遍历（子）文件夹：合并 DWG 并绘制边界框
-    参数：无
+【train】find_similar_parts 
+    说明：查询当前零件的相似零件（基于 WL 图核相似度匹配），返回整体零件的相似度排名
+    参数：[可选的：迭代次数，默认 1] [可选的：返回数量，默认 5]
 
 【cad】folder2dwg 
     说明：批量转换文件夹内 DXF 为 DWG
@@ -85,10 +81,6 @@
 
 【cad】folder2dxf 
     说明：批量转换文件夹内 DXF 为 DWG
-    参数：无
-
-【cad】folder2merge 
-    说明：批量合并文件夹内 DWG 文件（水平排列，间距 10）
     参数：无
 
 【solidworks】folder2step 
@@ -123,6 +115,10 @@
     说明：获取当前文档名称
     参数：无
 
+【train】get_part_labels 
+    说明：根据零件名获取所有 body 的标注并拼接成字符串。用法：get_part_labels [零件名] - 返回格式：body1:label1=value1,label2=value2;body2:label3=value3
+    参数：[零件名]
+
 【solidworks】get_select_part_name 
     说明：获取选中零件的名称
     参数：需先选择零件
@@ -139,17 +135,17 @@
     说明：从实体文件夹获取厚度
     参数：无
 
-【train】label 
-    说明：标注当前零件的拓扑图，把xx标注成xx件。用法：label [body 名称] [值] - 精确匹配 body 名称并标注。示例：label 凸台拉伸 1 管件、label 法兰盘 钣金件
-    参数：[body 名称] [值]
-
-【train】label_all 
+【train】label_all_bodys 
     说明：标注当前零件的所有 body 为同一个标注。用法：label_all [值] - 无需指定 body 名称，将所有 body 标注为同一类别。示例：label_all 管件、label_all 钣金件、标注当前文件为 xx 也用此方法
     参数：[值]
 
 【train】label_batch 
     说明：批量标注文件夹中的所有零件
     参数：[文件夹路径]
+
+【train】label_body 
+    说明：标注当前零件的拓扑图，把xx标注成xx件。用法：label [body 名称] [值] - 精确匹配 body 名称并标注。示例：label 凸台拉伸 1 管件、label 法兰盘 钣金件
+    参数：[body 名称] [值]
 
 【train】label_delete 
     说明：删除指定的标注 (删除零件 id 为 x 的数据)
@@ -171,9 +167,9 @@
     说明：显示数据库统计信息，打印一下数据库所有数据
     参数：无
 
-【cad】merge_dwg 
-    说明：合并多个 DWG 文件
-    参数：<DWG 文件路径>
+【cad】mergedwg 
+    说明：遍历（子）文件夹：合并 DWG 并绘制边界框
+    参数：无
 
 【solidworks】new_drw 
     说明：新建工程图

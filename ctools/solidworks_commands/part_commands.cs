@@ -18,13 +18,14 @@ namespace tools
       
         }
 
-        [Command("get_all_body_names", Description = "获取当前零件的所有 body 名称", Parameters = "无", Group = "solidworks")]
+        [Command("get_all_body_names", Description = "获取当前零件的所有 body 名称", Parameters = "无", Group = "solidworks", Aliases = new[] { "bodyname" })]
         static void GetAllBodyNames(string[] args)
         {
             if (swApp == null || swModel == null) return;
 
             get_all_body_names.run(swModel);
         }
+
         
         [Command("get_select_type", Description = "导出当前零件展开为 DWG 文件", Parameters = "无", Group = "solidworks")]
         static void Get_select_type(string[] args)

@@ -48,6 +48,9 @@ namespace tools
             // 初始化输出捕获
             _consoleOutputCapture = new StringWriter();
             _originalConsoleOutput = Console.Out;
+            
+            // 重定向 Console 输出（不再写入 runlog）
+            Console.SetOut(_originalConsoleOutput);
         }
 
         /// <summary>
@@ -73,6 +76,7 @@ namespace tools
                     parameters.Required.Add("argument");
                 }
                 
+                // 为主命令名创建工具
                 tools.Add(new ToolDefinition
                 {
                     Type = "function",
@@ -83,6 +87,27 @@ namespace tools
                         Parameters = parameters
                     }
                 });
+                
+                // 为每个别名创建工具
+                if (cmd.Aliases != null)
+                {
+                    foreach (var alias in cmd.Aliases)
+                    {
+                        if (!string.IsNullOrEmpty(alias))
+                        {
+                            tools.Add(new ToolDefinition
+                            {
+                                Type = "function",
+                                Function = new FunctionDefinition
+                                {
+                                    Name = $"execute_{alias}",
+                                    Description = $"{cmd.Description ?? ""} (别名：{cmd.Name})",
+                                    Parameters = parameters
+                                }
+                            });
+                        }
+                    }
+                }
             }
             
             return tools;
@@ -124,14 +149,20 @@ namespace tools
                 {
                     Console.WriteLine($"    参数：{argumentValue}");
                 }
+                
+                // 拦截 Console 输出到 tool 里面
+                _consoleOutputCapture!.GetStringBuilder().Clear();
+                Console.SetOut(_consoleOutputCapture);
                         
                 // 等待用户确认
                 if (_requireConfirmation)
                 {
-                    Console.Write("\n是否执行此命令？(y/n/auto): ");
+                    // 临时恢复原始 Console 输出，让用户能看到提示语
+                    Console.SetOut(_originalConsoleOutput);
+                    Console.Write("\n是否执行此命令？ (y/n/auto): ");
                     var userInput = await GetUserInputAsync("");
                     userInput = userInput?.Trim().ToLower();
-                            
+                                            
                     if (userInput == "auto")
                     {
                         _requireConfirmation = false;
@@ -142,13 +173,13 @@ namespace tools
                         Console.WriteLine("已跳过此命令");
                         return ($"命令 '{functionName}' 已经被用户拒绝", "");
                     }
+                                    
+                    // 重新设置输出捕获，用于后续的命令执行
+                    _consoleOutputCapture!.GetStringBuilder().Clear();
+                    Console.SetOut(_consoleOutputCapture);
                 }
                         
                 Console.WriteLine($"\n>>> 正在执行命令：{fullCommand}...\n");
-                
-                // 拦截 Console 输出到 tool 里面
-                _consoleOutputCapture!.GetStringBuilder().Clear();
-                Console.SetOut(_consoleOutputCapture);
                 
                 try
                 {
@@ -296,17 +327,75 @@ namespace tools
             }
             
             var allCommands = CommandRegistry.Instance.GetAllCommands();
+            
+            // 第一步：检查是否是 "命令名 + 参数" 的格式（优先处理）
+            foreach (var cmd in allCommands.Values)
+            {
+                string cmdNameLower = cmd.Name.ToLower();
+                
+                // 检查输入是否以命令名开头（支持带空格参数）
+                if (inputLower.StartsWith(cmdNameLower + " ") || inputLower == cmdNameLower)
+                {
+                    // 完全匹配命令名，带有参数
+                    Console.WriteLine($"[调试] 命令 + 参数匹配：'{input}' -> '{cmd.Name}' (完全匹配命令名，带参数)");
+                    return (cmd.Name, 1.0, true);
+                }
+                
+                // 检查是否匹配别名
+                if (cmd.Aliases != null)
+                {
+                    foreach (var alias in cmd.Aliases)
+                    {
+                        if (!string.IsNullOrEmpty(alias))
+                        {
+                            string aliasLower = alias.ToLower();
+                            if (inputLower.StartsWith(aliasLower + " ") || inputLower == aliasLower)
+                            {
+                                // 完全匹配别名，带有参数
+                                Console.WriteLine($"[调试] 命令 + 参数匹配：'{input}' -> '{cmd.Name}' (完全匹配别名 '{alias}',带参数)");
+                                return (cmd.Name, 1.0, true);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 第二步：如果没有匹配到命令名，进行传统的模糊匹配（包括别名）
             var matches = new List<(string Command, double Score)>();
             
             foreach (var cmd in allCommands.Values)
             {
+                // 计算与原名称的相似度
                 double scoreName = CalculateSimilarity(inputLower, cmd.Name.ToLower());
-                double scoreDesc = CalculateSimilarity(inputLower, (cmd.Description ?? "").ToLower());
-                double score = Math.Max(scoreName, scoreDesc);
                 
-                // 如果完全匹配，给予最高分
+                // 计算与别名的相似度（取最高分）
+                double scoreAlias = 0.0;
+                if (cmd.Aliases != null)
+                {
+                    foreach (var alias in cmd.Aliases)
+                    {
+                        if (!string.IsNullOrEmpty(alias))
+                        {
+                            double aliasScore = CalculateSimilarity(inputLower, alias.ToLower());
+                            scoreAlias = Math.Max(scoreAlias, aliasScore);
+                        }
+                    }
+                }
+                
+                // 计算与描述的相似度
+                double scoreDesc = CalculateSimilarity(inputLower, (cmd.Description ?? "").ToLower());
+                
+                // 取最高分
+                double score = Math.Max(scoreName, Math.Max(scoreAlias, scoreDesc));
+                
+                // 如果完全匹配（包括别名），给予最高分
                 if (inputLower == cmd.Name.ToLower())
                 {
+                    score = 1.0;
+                }
+                else if (cmd.Aliases != null && cmd.Aliases.Any(a => a?.ToLower() == inputLower))
+                {
+                    // 如果是别名完全匹配，也给予最高分
                     score = 1.0;
                 }
                 
@@ -434,7 +523,7 @@ namespace tools
                                 }
                                 
                                 // 将执行结果保存到记忆
-                                SaveCommandResultToMemory(matchedCommand, result);
+                                SaveCommandResultToMemory(matchedCommand, result, capturedOutput);
                             }
                             catch
                             {
@@ -477,8 +566,8 @@ namespace tools
                         if (results.Count > 0)
                         {
                             Console.WriteLine($"\n>>> 所有命令执行完成");
-                            
-                            // 将 Tool 调用结果保存到短期记忆
+                                                
+                            // 将 Tool 调用结果保存到短期记忆（以 user 角色）
                             SaveToolResultsToMemory(toolCalls, results);
                         }
                     }
@@ -522,8 +611,42 @@ namespace tools
                     sb.AppendLine($"  返回：{result}");
                     if (!string.IsNullOrEmpty(capturedOutput))
                     {
-                        sb.AppendLine($"  输出:\n{capturedOutput}");
+                        sb.AppendLine($"  Console 输出:\n{capturedOutput.Trim()}");
                     }
+                }
+                
+                // 将结果作为 user 消息保存（让 LLM 知道 Tool 执行的结果）
+                var messages = LoadMessagesFromDisk();
+                messages.Add(new ChatMessage 
+                { 
+                    Role = "user", 
+                    Content = sb.ToString() 
+                });
+                
+                SaveMessagesToDisk(messages);
+                
+                Console.WriteLine($"[调试] Tool 调用结果已保存到短期记忆（包含 Console 输出）");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[警告] 保存 Tool 调用结果失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 保存命令执行结果到记忆
+        /// </summary>
+        private void SaveCommandResultToMemory(string commandName, string result, string? consoleOutput = null)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("\n***命令执行结果:***");
+                sb.AppendLine($"命令：{commandName}");
+                sb.AppendLine($"结果：{result}");
+                if (!string.IsNullOrEmpty(consoleOutput))
+                {
+                    sb.AppendLine($"Console 输出:\n{consoleOutput.Trim()}");
                 }
                 
                 // 将结果作为 assistant 消息保存
@@ -536,37 +659,7 @@ namespace tools
                 
                 SaveMessagesToDisk(messages);
                 
-                Console.WriteLine($"[调试] Tool 调用结果已保存到短期记忆");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[警告] 保存 Tool 调用结果失败：{ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 保存命令执行结果到记忆
-        /// </summary>
-        private void SaveCommandResultToMemory(string commandName, string result)
-        {
-            try
-            {
-                var sb = new StringBuilder();
-                sb.AppendLine("\n***命令执行结果:***");
-                sb.AppendLine($"命令：{commandName}");
-                sb.AppendLine($"结果：{result}");
-                
-                // 将结果作为 assistant 消息保存
-                var messages = LoadMessagesFromDisk();
-                messages.Add(new ChatMessage 
-                { 
-                    Role = "assistant", 
-                    Content = sb.ToString() 
-                });
-                
-                SaveMessagesToDisk(messages);
-                
-                Console.WriteLine($"[调试] 命令执行结果已保存到短期记忆");
+                Console.WriteLine($"[调试] 命令执行结果已保存到短期记忆{(consoleOutput != null ? "(包含 Console 输出)" : "")}");
             }
             catch (Exception ex)
             {
@@ -714,6 +807,65 @@ namespace tools
             else
             {
                 Console.WriteLine("暂无短期记忆文件");
+            }
+        }
+
+        /// <summary>
+        /// 多路文本写入器 - 同时写入多个 TextWriter
+        /// </summary>
+        public class MultiTextWriter : TextWriter
+        {
+            private readonly List<TextWriter> _writers;
+
+            public MultiTextWriter(params TextWriter[] writers)
+            {
+                _writers = new List<TextWriter>(writers ?? throw new ArgumentNullException(nameof(writers)));
+            }
+
+            public override Encoding Encoding => Encoding.UTF8;
+
+            public override void Write(char value)
+            {
+                foreach (var writer in _writers)
+                {
+                    writer.Write(value);
+                }
+            }
+
+            public override void Write(string? value)
+            {
+                foreach (var writer in _writers)
+                {
+                    writer.Write(value);
+                }
+            }
+
+            public override void WriteLine(string? value)
+            {
+                foreach (var writer in _writers)
+                {
+                    writer.WriteLine(value);
+                }
+            }
+
+            public override void Flush()
+            {
+                foreach (var writer in _writers)
+                {
+                    writer.Flush();
+                }
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    foreach (var writer in _writers)
+                    {
+                        writer?.Dispose();
+                    }
+                }
+                base.Dispose(disposing);
             }
         }
 

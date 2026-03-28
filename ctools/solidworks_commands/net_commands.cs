@@ -146,7 +146,7 @@ namespace tools
         /// <summary>
         /// 标注所有 body 为同一个值
         /// </summary>
-        [Command("label_all_bodies", Description = "标注当前零件的所有 body 为同一个标注。用法：label_all [值] - 无需指定 body 名称，将所有 body 标注为同一类别。示例：label_all 管件、label_all 钣金件、标注当前文件为 xx 也用此方法", Parameters = "[值]", Group = "train")]
+        [Command("label_all_bodys", Description = "标注当前零件的所有 body 为同一个标注。用法：label_all [值] - 无需指定 body 名称，将所有 body 标注为同一类别。示例：label_all 管件、label_all 钣金件、标注当前文件为 xx 也用此方法", Parameters = "[值]", Group = "train")]
         static void LabelAllBodies(string[] args)
         {
             if (Program.SwModel == null)
@@ -463,6 +463,44 @@ namespace tools
             }
             
             TopologyLabeler.ClearDatabase(mode);
+        }
+
+        /// <summary>
+        /// 根据零件名获取所有标注并拼接成字符串
+        /// </summary>
+        [Command("get_part_labels", Description = "根据零件名获取所有 body 的标注并拼接成字符串。用法：get_part_labels [零件名] - 返回格式：body1:label1=value1,label2=value2;body2:label3=value3", Parameters = "[零件名]", Group = "train")]
+        static void GetPartLabels(string[] args)
+        {
+            if (args.Length < 1)
+            {
+                Console.WriteLine("\n=== 用法 ===");
+                Console.WriteLine("get_part_labels [零件名]");
+                Console.WriteLine("示例:");
+                Console.WriteLine("  get_part_labels 法兰盘.sldprt");
+                Console.WriteLine("  get_part_labels 底座");
+                Console.WriteLine("\n返回格式：body1:label1=value1,label2=value2;body2:label3=value3");
+                return;
+            }
+
+            string partName = args[0];
+
+            Console.WriteLine("=== 获取零件标注 ===\n");
+            
+            // 初始化数据库
+            TopologyLabeler.Initialize();
+            var database = TopologyLabeler.GetDatabase();
+            
+            // 获取所有标签并拼接成字符串
+            string labelsString = database!.GetLabelsByPartName(partName);
+            
+            if (string.IsNullOrEmpty(labelsString))
+            {
+                Console.WriteLine($"× 未找到零件 '{partName}' 的标注信息");
+                return;
+            }
+            
+            Console.WriteLine($"✓ 零件 '{partName}' 的标注信息:");
+            Console.WriteLine($"\n{labelsString}\n");
         }
     }
 }
