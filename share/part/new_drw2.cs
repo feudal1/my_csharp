@@ -7,7 +7,7 @@ using SolidWorks.Interop.swconst;
 
 namespace tools
 {
-    public class New_drw
+    public class New_drw2
     {
         static public void run(SldWorks swApp, ModelDoc2 swModel)
         {
@@ -26,7 +26,7 @@ namespace tools
                   return;
                  }
                  
-              swApp.NewDocument(@"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates\gb_a4.drwdot", 0, 0, 0);
+              swApp.NewDocument(@"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates\space.drwdot", 0, 0, 0);
                
                swModel = (ModelDoc2)swApp.ActiveDoc;
                   if (swModel.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
@@ -40,11 +40,11 @@ namespace tools
                     
                         DrawingDoc drawingDoc = (DrawingDoc)swModel;
                       
-                        swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1); 
- 
-                        swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000); 
+                  
                 drawingDoc.GenerateViewPaletteViews(fullpath);
-              
+                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1); 
+ 
+                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R12);
                var view1 = drawingDoc.CreateDrawViewFromModelView3(fullpath, "*上视", 0.08, 0.10, 0);
                 if (view1 == null) Console.WriteLine("view=null");
                     if (view1==null) view1 = drawingDoc.CreateDrawViewFromModelView3(fullpath, "*Top", 0.13, 0.22, 0);

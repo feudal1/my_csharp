@@ -22,8 +22,7 @@ namespace tools
             }
             
           
-            swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1);
-          swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
+         
            
             // 设置自定义映射文件
             if (swApp != null)

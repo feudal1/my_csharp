@@ -163,7 +163,38 @@ using System.Linq;
             swApp?.SendMsgToUser($"创建工程图失败：{ex.Message}");
         }
     }
-   
+    [Command(1005, "新建工程图", "为当前零件创建工程图并添加视图", "newdrw2", (int)swDocumentTypes_e.swDocPART)]
+    private void NewDrw2()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个零件文档");
+                return;
+            }
+
+      
+            
+            // 创建新工程图
+            New_drw2.run(swApp, swModel);
+            
+            Debug.WriteLine("工程图已创建");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"创建工程图失败：{ex.Message}");
+            swApp?.SendMsgToUser($"创建工程图失败：{ex.Message}");
+        }
+    }
     
 
  
