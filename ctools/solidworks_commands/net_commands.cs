@@ -154,7 +154,7 @@ namespace tools
         }
  
  
-        [Command("find_similar_parts", Description = "查询当前零件的相似零件（基于 WL 图核相似度匹配），返回整体零件的相似度排名", Parameters = "[可选的：迭代次数，默认 1] [可选的：返回数量，默认 5]", Group = "train")]
+        [Command("findpart", Description = "查询当前零件的相似零件（基于 WL 图核相似度匹配），返回整体零件的相似度排名", Parameters = "[可选的：迭代次数，默认 1] [可选的：返回数量，默认 5]", Group = "train")]
         static void FindCategory(string[] args)
         {
             if (Program.SwModel == null)
