@@ -1079,7 +1079,8 @@ namespace tools
                     {
                         foreach (var label in data.Labels)
                         {
-                            results.Add((label.Category, partName, bodyName, similarity, label.Confidence, label.Notes));
+                            // 返回 label_value 而不是 label_category
+                            results.Add((label.Value, partName, bodyName, similarity, label.Confidence, label.Notes));
                         }
                     }
                 }
@@ -1110,24 +1111,41 @@ namespace tools
         {
             var detailedResults = FindCategoriesByWLTags(wlFrequencies, topK: 100, minSimilarity: minSimilarity);
             
-            // 按类别分组统计
-            var categoryGroups = detailedResults
-                .GroupBy(r => r.Category)
-                .Select(g => new
-                {
-                    Category = g.Key,
-                    Count = g.Count(),
-                    AvgSimilarity = g.Average(r => r.Similarity),
-                    AvgConfidence = g.Average(r => r.Confidence)
-                })
-                .OrderByDescending(x => x.Count)
-                .ThenByDescending(x => x.AvgSimilarity)
-                .Take(topK)
-                .ToList();
+                // 按 body 去重后，再按 label_value 分组统计
+                var bodyValues = detailedResults
+                    .GroupBy(r => r.PartName + "|" + r.BodyName)  // 先按 body 唯一标识分组
+                    .Select(g => 
+                    {
+                        // 对于每个 body，取相似度最高的那个标注值
+                        var bestMatch = g.OrderByDescending(r => r.Similarity).First();
+                        return new
+                        {
+                            BodyKey = g.Key,
+                            LabelValue = bestMatch.Category,  // Category 字段实际存储的是 label_value
+                            Similarity = bestMatch.Similarity,
+                            Confidence = bestMatch.Confidence
+                        };
+                    })
+                    .ToList();
+                
+                // 按标注值分组统计
+                var valueGroups = bodyValues
+                    .GroupBy(x => x.LabelValue)
+                    .Select(g => new
+                    {
+                        Value = g.Key,
+                        Count = g.Count(),
+                        AvgSimilarity = g.Average(x => x.Similarity),
+                        AvgConfidence = g.Average(x => x.Confidence)
+                    })
+                    .OrderByDescending(x => x.Count)
+                    .ThenByDescending(x => x.AvgSimilarity)
+                    .Take(topK)
+                    .ToList();
 
-            return categoryGroups
-                .Select(x => (x.Category, x.Count, x.AvgSimilarity, x.AvgConfidence))
-                .ToList();
+                return valueGroups
+                    .Select(x => (x.Value, x.Count, x.AvgSimilarity, x.AvgConfidence))
+                    .ToList();
         }
 
         /// <summary>
@@ -1221,7 +1239,9 @@ namespace tools
                     
                     double similarity = WLGraphKernel.CalculateSimilarity(wlFrequencies[queryIteration], data.WLFreqs[0]);
                     
-                    Console.WriteLine($"[调试] {partName}+{bodyName}: 相似度={similarity:F3} (阈值={minSimilarity})");
+                    // 获取第一个标注的 label_value 用于显示
+                    string labelValue = data.Labels.Count > 0 ? data.Labels[0].Value : "无标注";
+                    Console.WriteLine($"[调试] {partName}+{bodyName}: 相似度={similarity:F3}, labelValue={labelValue} (阈值={minSimilarity})");
                     
                     if (similarity >= minSimilarity)
                     {

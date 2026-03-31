@@ -114,7 +114,7 @@ namespace tools
                         
                         for (int i = 0; i < bodyIds.Count; i++)
                         {
-                            string category = $"{graphs[i].FullBodyName}";
+                            string category = "结构类型";
                             database.AddLabel(bodyIds[i], category, topRecommendation.Value, confidence: 1.0, notes: "推荐标注");
                             Console.WriteLine($"  ✓ Body [{i}] {graphs[i].FullBodyName} → {topRecommendation.Value}");
                         }
@@ -155,7 +155,7 @@ namespace tools
                     
             for (int i = 0; i < bodyIds.Count; i++)
             {
-                string category = $"{graphs[i].FullBodyName}"; // 使用完整 body 名称作为类别
+                string category = "结构类型";
                 database.AddLabel(bodyIds[i], category, value, confidence: 1.0, notes: "批量标注");
                 Console.WriteLine($"  ✓ Body [{i}] {graphs[i].FullBodyName} → {value}");
             }
