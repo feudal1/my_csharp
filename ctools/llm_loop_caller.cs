@@ -505,6 +505,9 @@ namespace tools
                             
                             try
                             {
+                                // 临时恢复原始 Console 输出，让用户能看到命令内部的确认提示
+                                Console.SetOut(_originalConsoleOutput);
+                                
                                 string result = await _commandExecutor.ExecuteCommandAsync(fullCommand);
                                 
                                 // 恢复 Console 输出
@@ -760,8 +763,13 @@ namespace tools
         {
             return await Task.Run(() =>
             {
+                Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.Write(prompt);
-                return Console.ReadLine();
+                Console.ResetColor();
+                  Console.ForegroundColor = ConsoleColor.Cyan;
+                var input = Console.ReadLine();
+                Console.ResetColor();
+                return input;
             });
         }
         

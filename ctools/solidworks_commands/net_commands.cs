@@ -14,139 +14,12 @@ namespace tools
     {
         // ========== 拓扑标注相关命令 ==========
         
-        [Command("label_body", Description = "标注当前零件的拓扑图，把xx标注成xx件。用法：label [body 名称] [值] - 精确匹配 body 名称并标注。示例：label 凸台拉伸 1 管件、label 法兰盘 钣金件", Parameters = "[body 名称] [值]", Group = "train")]
-
-        static void LabelPart(string[] args)
-        {
-            if (Program.SwModel == null)
-            {
-                Console.WriteLine("错误：请先打开一个零件文档");
-                return;
-            }
-
-            // 检查参数
-            if (args.Length < 2)
-            {
-                Console.WriteLine("\n=== 用法 ===");
-                Console.WriteLine("label [body 名称] [值]");
-                Console.WriteLine("示例:");
-                Console.WriteLine("  label 凸台拉伸 1 管件");
-                Console.WriteLine("  label 法兰盘 钣金件");
-                Console.WriteLine("  label 底座 框架");
-                return;
-            }
-
-            string bodyName = args[0];
-            string value = args[1];
-
-            Console.WriteLine("=== 零件拓扑标注 ===\n");
-            
-            // 获取所有 body 的名称列表（不构建图）
-            PartDoc partDoc = (PartDoc)Program.SwModel;
-            object[]? vBodies = (object[])partDoc.GetBodies2((int)swBodyType_e.swSolidBody, false);
-            
-            if (vBodies == null || vBodies.Length == 0)
-            {
-                Console.WriteLine("× 未找到任何 body");
-                return;
-            }
-            
-            // 查找匹配的 body
-            Body2? targetBody = null;
-            int targetIndex = -1;
-            string normalizedInput = bodyName.Trim().ToLower();
-            
-            // 显示所有 body 信息
-            Console.WriteLine($"零件包含 {vBodies.Length} 个 body:");
-            for (int i = 0; i < vBodies.Length; i++)
-            {
-                var body = (Body2)vBodies[i];
-                string bName = body.Name;
-                Console.WriteLine($"  [{i}] {bName}");
-                
-                // 精确匹配（忽略大小写和首尾空格）
-                if (targetBody == null)
-                {
-                    if (bName.Trim().ToLower() == normalizedInput)
-                    {
-                        targetBody = body;
-                        targetIndex = i;
-                    }
-                }
-            }
-            
-            if (targetBody == null)
-            {
-                Console.WriteLine($"\n× 错误：未找到名为 '{bodyName}' 的 body");
-                return;
-            }
-            
-            // 只为目标 body 构建拓扑图
-            Console.WriteLine($"\n正在为 Body [{targetIndex}] {targetBody.Name} 构建拓扑图...");
-            var graph = FaceGraphBuilder.BuildSingleBodyGraph(Program.SwModel, targetBody);
-            
-            if (graph == null || graph.Nodes.Count == 0)
-            {
-                Console.WriteLine("× 无法构建拓扑图");
-                return;
-            }
-            
-            Console.WriteLine($"  ✓ Body [{targetBody.Name}] 构建完成：{graph.Nodes.Count} 个面");
-            
-            // 执行 WL 迭代
-            Console.WriteLine($"\n=== 执行 WL 迭代 (1 次) ===");
-            WLGraphKernel.PerformWLIterations(graph, 1);
-            
-            // 获取零件信息
-            string partName = Program.SwModel.GetTitle();
-            string fullPath = Program.SwModel.GetPathName();
-            
-            // 初始化数据库并存储到数据库
-            TopologyLabeler.Initialize();
-            var database = TopologyLabeler.GetDatabase();
-            var bodyIds = database!.UpsertPartWithBodies(partName, fullPath, new List<BodyGraph> { graph });
-            
-            // 标注指定的 body
-            int targetBodyId = bodyIds[0];
-            AddAndShowLabel(database, targetBodyId, graph, value, 0);
-            
-            // 显示统计信息
-            TopologyLabeler.ShowStatistics();
-        }
-
-        /// <summary>
-        /// 添加标注并显示结果
-        /// </summary>
-        static void AddAndShowLabel(TopologyDatabase database, int bodyId, BodyGraph graph, string value, int bodyIndex)
-        {
-            // 使用完整 body 名称作为类别（partname+bodyname）
-            string category = graph.FullBodyName;
-                    
-            database.AddLabel(bodyId, category, value, confidence: 1.0, notes: "LLM 自动标注");
-                    
-            Console.WriteLine($"\n✓ 标注已添加:");
-            Console.WriteLine($"  Body: {graph.FullBodyName}");
-            Console.WriteLine($"  值：{value}");
-        
-            // 显示该 body 的所有标注
-            var allLabels = database.GetBodyLabels(bodyId);
-            if (allLabels.Count > 0)
-            {
-                Console.WriteLine($"\n  Body [{bodyIndex}] 的所有标注:");
-                foreach (var labelCategory in allLabels)
-                {
-                    foreach (var labelData in labelCategory.Value)
-                    {
-                        Console.WriteLine($"    {labelCategory.Key}: {labelData.Item1} (置信度：{labelData.Item2}) - {labelData.Item3}");
-                    }
-                }
-            }
-        }
+    
         
         /// <summary>
         /// 标注所有 body 为同一个值
         /// </summary>
-        [Command("label_all_bodys", Description = "标注当前零件的所有 body 为同一个标注。用法：label_all [值] - 无需指定 body 名称，将所有 body 标注为同一类别。示例：label_all 管件、label_all 钣金件、标注当前文件为 xx 也用此方法", Parameters = "[值]", Group = "train")]
+        [Command("label", Description = "标注当前零件的所有 body 为同一个标注。用法：label_all [值] - 无需指定 body 名称，将所有 body 标注为同一类别。示例：label_all 管件、label_all 钣金件、标注当前文件为 xx 也用此方法", Parameters = "[值]", Group = "train")]
         static void LabelAllBodies(string[] args)
         {
             if (Program.SwModel == null)
@@ -178,13 +51,101 @@ namespace tools
             // 检查参数
             if (args.Length < 1)
             {
-                Console.WriteLine("\n=== 用法 ===");
-                Console.WriteLine("label_all [值]");
-                Console.WriteLine("示例:");
-                Console.WriteLine("  label_all 管件");
-                Console.WriteLine("  label_all 钣金件");
-                Console.WriteLine("  label_all 结构件");
-                return;
+                Console.WriteLine("\n=== 未提供标注值，正在查找推荐类别... ===\n");
+                
+                // 构建 WL 频率用于查找推荐
+                var combinedFrequencies = new List<Dictionary<string, int>>();
+                foreach (var graph in graphs)
+                {
+                    var wlFreq = WLGraphKernel.PerformWLIterations(graph, 1);
+                    if (combinedFrequencies.Count == 0)
+                    {
+                        combinedFrequencies = wlFreq;
+                    }
+                    else
+                    {
+                        for (int i = 0; i < wlFreq.Count; i++)
+                        {
+                            foreach (var kvp in wlFreq[i])
+                            {
+                                if (!combinedFrequencies[i].ContainsKey(kvp.Key))
+                                    combinedFrequencies[i][kvp.Key] = 0;
+                                combinedFrequencies[i][kvp.Key] += kvp.Value;
+                            }
+                        }
+                    }
+                }
+                
+                // 查找推荐类别（使用 FindBodiesByWLTags 获取详细匹配结果）
+                var matches = database!.FindBodiesByWLTags(combinedFrequencies, topK: 10, minSimilarity: 0.3);
+                
+                if (matches.Count > 0)
+                {
+                    // 按标注值分组统计（使用 LabelValue 而不是 Category）
+                    var valueGroups = matches
+                        .GroupBy(m => m.LabelValue)
+                        .Select(g => new
+                        {
+                            Value = g.Key,
+                            Count = g.Count(),
+                            AvgSimilarity = g.Average(m => m.Similarity),
+                            AvgConfidence = g.Average(m => m.Confidence)
+                        })
+                        .OrderByDescending(x => x.Count)
+                        .ThenByDescending(x => x.AvgSimilarity)
+                        .First();
+                    
+                    var topRecommendation = (valueGroups.Value, valueGroups.Count, valueGroups.AvgSimilarity, valueGroups.AvgConfidence);
+                    Console.WriteLine($"\n{'=',60}");
+                    Console.WriteLine("推荐标注类别");
+                    Console.WriteLine($"{'=',60}");
+                    Console.WriteLine($"1. 标注值：{topRecommendation.Value}");
+                    Console.WriteLine($"   出现次数：{topRecommendation.Count} 次");
+                    Console.WriteLine($"   平均相似度：{topRecommendation.AvgSimilarity:F3} ({topRecommendation.AvgSimilarity * 100:F1}%)");
+                    Console.WriteLine($"   平均置信度：{topRecommendation.AvgConfidence:F2}");
+                    Console.WriteLine($"{'=',60}\n");
+                    
+                    Console.Write($"是否按最高推荐标注值 '{topRecommendation.Value}' 标注所有 {bodyIds.Count} 个 body？(y/n): ");
+                    string? confirm = Console.ReadLine()?.Trim().ToLower();
+                    
+                    if (confirm == "y" || confirm == "yes")
+                    {
+                        Console.WriteLine($"\n正在标注 {bodyIds.Count} 个 body 为 '{topRecommendation.Value}'...\n");
+                        
+                        for (int i = 0; i < bodyIds.Count; i++)
+                        {
+                            string category = $"{graphs[i].FullBodyName}";
+                            database.AddLabel(bodyIds[i], category, topRecommendation.Value, confidence: 1.0, notes: "推荐标注");
+                            Console.WriteLine($"  ✓ Body [{i}] {graphs[i].FullBodyName} → {topRecommendation.Value}");
+                        }
+                        
+                        Console.WriteLine($"\n✓ 成功标注 {bodyIds.Count} 个 body");
+                        TopologyLabeler.ShowStatistics();
+                        return;
+                    }
+                    else
+                    {
+                        Console.WriteLine("\n已取消标注操作");
+                        Console.WriteLine("\n=== 用法 ===");
+                        Console.WriteLine("label_all [值]");
+                        Console.WriteLine("示例:");
+                        Console.WriteLine("  label_all 管件");
+                        Console.WriteLine("  label_all 钣金件");
+                        Console.WriteLine("  label_all 结构件");
+                        return;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("\n=== 用法 ===");
+                    Console.WriteLine("label_all [值]");
+                    Console.WriteLine("提示：未找到推荐类别，请手动指定标注值");
+                    Console.WriteLine("示例:");
+                    Console.WriteLine("  label_all 管件");
+                    Console.WriteLine("  label_all 钣金件");
+                    Console.WriteLine("  label_all 结构件");
+                    return;
+                }
             }
         
             string value = args[0];
@@ -237,7 +198,7 @@ namespace tools
         /// <summary>
         /// 使用 WL 标签查找相似的用户标注
         /// </summary>
-        [Command("find_similar_labels", Description = "查询当前零件的相似标注，使用 WL 拓扑标签查找具有相似特征的用户标注（匹配 body 级别的标注）", Parameters = "[可选的：迭代次数，默认 1] [可选的：返回数量，默认 10] [可选的：最小相似度，默认 0.3]", Group = "train")]
+        [Command("findlabel", Description = "查询当前零件的相似标注，使用 WL 拓扑标签查找具有相似特征的用户标注（匹配 body 级别的标注）", Parameters = "[可选的：迭代次数，默认 1] [可选的：返回数量，默认 10] [可选的：最小相似度，默认 0.3]", Group = "train")]
         static void FindLabelsByWL(string[] args)
         {
             if (Program.SwModel == null)
@@ -316,17 +277,6 @@ namespace tools
         }
 
 
-        [Command("label_quick", Description = "快速标注当前零件（仅计算存储，不立即标注）", Parameters = "无", Group = "train")]
-        static void QuickLabelPart(string[] args)
-        {
-            if (Program.SwModel == null)
-            {
-                Console.WriteLine("错误：请先打开一个零件文档");
-                return;
-            }
-
-            TopologyLabelingExample.QuickLabel(Program.SwApp!, Program.SwModel);
-        }
 
         [Command("view_parts", Description = "查看数据库里所有已标注的零件", Parameters = "无", Group = "train")]
         static void ViewAllParts(string[] args)

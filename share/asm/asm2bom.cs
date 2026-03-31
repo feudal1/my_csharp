@@ -75,7 +75,7 @@ namespace tools
                         continue;
                     }
                     var partname = cellText.Trim();
-                    Console.WriteLine($"partname:{partname}");
+                    Debug.WriteLine($"partname:{partname}");
                     
                     // 获取所有 body 及其标签，格式：bodyName1,label1;bodyName2,label2
                     string labelsString = database!.GetLabelsByPartName(partname);
@@ -102,35 +102,7 @@ namespace tools
                     
                     }
                   
-                    // 如果还有更多 body，在当前行后插入新行
-                    if (bodyLabelPairs.Length > 1)
-                    {
-                        swTableAnnotation.set_Text(i, 3, "组合件");
-                        // 从第二个 body 开始，在每个当前行后插入新行
-                        for (int j = 0; j < bodyLabelPairs.Length; j++)
-                        {
-                            // 在第 i 行后插入新行
-                            swTableAnnotation.InsertRow((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After, i);
-                            
-                            // 新插入的行就是第 i+1 行
-                            int newRow = i + 1;
-                            
-                            // 解析新行的数据
-                            string newPair = bodyLabelPairs[j];
-                            string[] newParts = newPair.Split(',');
-                            string newBodyName = newParts[0];
-                            string newLabel = newParts[1];
-                            
-                            // 设置新行的第 1 列（bodyName）
-                            swTableAnnotation.set_Text(newRow, 1, newBodyName);
-                            
-                            // 设置新行的第 3 列（label）
-                            swTableAnnotation.set_Text(newRow, 3, newLabel);
-                            
-                            // 更新当前总行数
-                            currentRowCount++;
-                        }
-                    }
+            
                 }
 
                
