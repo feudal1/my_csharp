@@ -76,7 +76,8 @@ namespace tools
                     }
                     var partname = cellText.Trim();
                     Debug.WriteLine($"partname:{partname}");
-                    
+                    var partnumber=swTableAnnotation.get_Text(i, 0);
+                 
                     // 获取所有 body 及其标签，格式：bodyName1,label1;bodyName2,label2
                     string labelsString = database!.GetLabelsByPartName(partname);
                                         

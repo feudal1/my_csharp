@@ -81,42 +81,29 @@ namespace tools
                 
                 if (matches.Count > 0)
                 {
-                    // 按标注值分组统计（使用 LabelValue 而不是 Category）
-                    var valueGroups = matches
-                        .GroupBy(m => m.LabelValue)
-                        .Select(g => new
-                        {
-                            Value = g.Key,
-                            Count = g.Count(),
-                            AvgSimilarity = g.Average(m => m.Similarity),
-                            AvgConfidence = g.Average(m => m.Confidence)
-                        })
-                        .OrderByDescending(x => x.Count)
-                        .ThenByDescending(x => x.AvgSimilarity)
-                        .First();
+                    // 按相似度排序，取最高的标注值
+                    var topMatch = matches.OrderByDescending(m => m.Similarity).First();
                     
-                    var topRecommendation = (valueGroups.Value, valueGroups.Count, valueGroups.AvgSimilarity, valueGroups.AvgConfidence);
                     Console.WriteLine($"\n{'=',60}");
                     Console.WriteLine("推荐标注类别");
                     Console.WriteLine($"{'=',60}");
-                    Console.WriteLine($"1. 标注值：{topRecommendation.Value}");
-                    Console.WriteLine($"   出现次数：{topRecommendation.Count} 次");
-                    Console.WriteLine($"   平均相似度：{topRecommendation.AvgSimilarity:F3} ({topRecommendation.AvgSimilarity * 100:F1}%)");
-                    Console.WriteLine($"   平均置信度：{topRecommendation.AvgConfidence:F2}");
+                    Console.WriteLine($"1. 标注值：{topMatch.LabelValue}");
+                    Console.WriteLine($"   最高相似度：{topMatch.Similarity:F3} ({topMatch.Similarity * 100:F1}%)");
+                    Console.WriteLine($"   置信度：{topMatch.Confidence:F2}");
                     Console.WriteLine($"{'=',60}\n");
                     
-                    Console.Write($"是否按最高推荐标注值 '{topRecommendation.Value}' 标注所有 {bodyIds.Count} 个 body？(y/n): ");
+                    Console.Write($"是否按最高推荐标注值 '{topMatch.LabelValue}' 标注所有 {bodyIds.Count} 个 body？(y/n): ");
                     string? confirm = Console.ReadLine()?.Trim().ToLower();
                     
                     if (confirm == "y" || confirm == "yes")
                     {
-                        Console.WriteLine($"\n正在标注 {bodyIds.Count} 个 body 为 '{topRecommendation.Value}'...\n");
+                        Console.WriteLine($"\n正在标注 {bodyIds.Count} 个 body 为 '{topMatch.LabelValue}'...\n");
                         
                         for (int i = 0; i < bodyIds.Count; i++)
                         {
                             string category = "结构类型";
-                            database.AddLabel(bodyIds[i], category, topRecommendation.Value, confidence: 1.0, notes: "推荐标注");
-                            Console.WriteLine($"  ✓ Body [{i}] {graphs[i].FullBodyName} → {topRecommendation.Value}");
+                            database.AddLabel(bodyIds[i], category, topMatch.LabelValue, confidence: 1.0, notes: "推荐标注");
+                            Console.WriteLine($"  ✓ Body [{i}] {graphs[i].FullBodyName} → {topMatch.LabelValue}");
                         }
                         
                         Console.WriteLine($"\n✓ 成功标注 {bodyIds.Count} 个 body");
