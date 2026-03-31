@@ -3,12 +3,13 @@ using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace tools
 {
     public class asm2bom
     {
-        static public int run(SldWorks swApp, ModelDoc2 swModel)
+        static public async Task<int> run(SldWorks swApp, ModelDoc2 swModel)
         {
             try
             {
@@ -81,7 +82,9 @@ namespace tools
                                         
                     if (string.IsNullOrEmpty(labelsString))
                     {
-                        swTableAnnotation.set_Text(i, 3, "");
+                            swTableAnnotation.set_Text(i, 3, "");
+                       
+                        
                         continue;
                     }
                                         
