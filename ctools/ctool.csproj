@@ -37,6 +37,10 @@
 
   <ItemGroup>
 
+    <None Update="api_key.zip">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+
     <None Update="favicon.ico">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
