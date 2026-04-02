@@ -49,7 +49,7 @@ namespace tools
                 }
                 else
                 {
-                    Console.WriteLine($"错误：无法找到自定义映射文件。{mapFilePath}");
+                    swApp.SendMsgToUser($"错误：无法找到自定义映射文件。{mapFilePath}");
 
                 }
             }

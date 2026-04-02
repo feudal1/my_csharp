@@ -5,7 +5,7 @@ using SolidWorks.Interop.swconst;
 using System.Diagnostics;
 namespace tools
 {
-    public class get_select_type
+    public class open_select_dwg
     {
         static public void run(ModelDoc2 swModel)
         {
@@ -52,7 +52,7 @@ namespace tools
             }
  
 
-           var dwgFileName = outputfile + "\\" +  partname+ ".dwg";
+           var dwgFileName = outputfile + "\\" +  partname+"_"+body.Name + ".dwg";
             if(File.Exists(dwgFileName))
             {
                 Process.Start(new ProcessStartInfo

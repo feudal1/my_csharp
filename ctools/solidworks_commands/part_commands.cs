@@ -32,7 +32,7 @@ namespace tools
         {
             if (swApp == null || swModel == null) return;
 
-            get_select_type.run(swModel);
+            open_select_dwg.run(swModel);
 
         }
         [Command("export_flat_view", Description = "导出钣金展开视图 dwg", Parameters = "无", Group = "solidworks")]

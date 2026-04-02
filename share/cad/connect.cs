@@ -10,11 +10,29 @@ namespace cad_tools
 {
     class CadConnect
     {
+        // 缓存已连接的 AutoCAD 实例
+        static private AcadApplication? _cachedAcadApp = null;
+        
         /// <summary>
-        /// 获取或创建 AutoCAD 实例（自动检测最佳版本）
+        /// 获取或创建 AutoCAD 实例 (自动检测最佳版本)
         /// </summary>
         static public AcadApplication? GetOrCreateInstance()
         { 
+            // 如果已有缓存实例，先验证是否有效
+            if (_cachedAcadApp != null)
+            {
+                try
+                {
+                    // 尝试访问一个简单的属性来验证连接是否有效
+                    var appName = _cachedAcadApp.Name;
+                    return _cachedAcadApp;
+                }
+                catch
+                {
+                    // 连接已失效，清空缓存
+                    _cachedAcadApp = null;
+                }
+            }
             // 尝试获取所有已安装的 AutoCAD 版本
             var installedVersions = GetInstalledAutoCADVersions();
                     
@@ -100,6 +118,14 @@ namespace cad_tools
             Console.WriteLine("\n错误：无法连接或创建任何 AutoCAD 实例。");
             Console.WriteLine("建议：请手动启动任意版本的 AutoCAD 后再试。");
             return null;
+        }
+        
+        /// <summary>
+        /// 清除缓存的 AutoCAD 实例（用于强制重新连接）
+        /// </summary>
+        static public void ClearCache()
+        {
+            _cachedAcadApp = null;
         }
         
         /// <summary>

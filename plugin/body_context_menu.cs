@@ -18,7 +18,7 @@ namespace SolidWorksAddinStudy
               {
                   ShowOutputWindow();
                   var swModel = (ModelDoc2)swApp.ActiveDoc;
-                  get_select_type.run(swModel);
+                  open_select_dwg.run(swModel);
                   
             return "a";
 
