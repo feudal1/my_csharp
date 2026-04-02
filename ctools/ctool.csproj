@@ -9,8 +9,13 @@
     <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
     <NoWarn>$(NoWarn);MSB3245</NoWarn>
        <ConsoleEncoding>utf-8</ConsoleEncoding>
+       <ApplicationIcon>favicon.ico</ApplicationIcon>
     
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="favicon.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
