@@ -197,41 +197,6 @@ using System.Linq;
     }
     
 
- 
-
-       
-    [Command(1007, "打开 DWG工程图", "打开 DWG工程图", "opendwg", (int)swDocumentTypes_e.swDocDRAWING)]
-    private void Openwg()
-    {
-        try
-        {
-            if (swApp == null)
-            {
-                Debug.WriteLine("SolidWorks 未初始化");
-                return;
-            }
-
-            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
-            
-            if (swModel == null)
-            {
-                Debug.WriteLine("没有打开的文档");
-                swApp.SendMsgToUser("请先打开一个工程图文档");
-                return;
-            }
-           
-            // 使用 share 项目中的 drw2dwg 方法转换 DWG
-            opendwg.run(swModel, swApp);
-
-
-           
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"工程图dwg打开失败：{ex.Message}");
-            swApp?.SendMsgToUser($"工程图dwg打开失败：{ex.Message}");
-        }
-    }
     [Command(1006, "工程图转 DWGr12", "将当前工程图转换为 DWG 格式并打开", "drw2dwgr12", (int)swDocumentTypes_e.swDocDRAWING)]
     private void Drw2Dwgr12()
     {
@@ -266,6 +231,41 @@ using System.Linq;
         }
     }
 
-     
 
+
+
+       
+    [Command(1007, "打开 DWG工程图", "打开 DWG工程图", "opendwg", (int)swDocumentTypes_e.swDocDRAWING)]
+    private void Openwg()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个工程图文档");
+                return;
+            }
+           
+            // 使用 share 项目中的 drw2dwg 方法转换 DWG
+            opendwg.run(swModel, swApp);
+
+
+           
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"工程图dwg打开失败：{ex.Message}");
+            swApp?.SendMsgToUser($"工程图dwg打开失败：{ex.Message}");
+        }
+    }
+  
 }}
