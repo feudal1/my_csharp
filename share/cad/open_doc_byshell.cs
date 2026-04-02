@@ -1,26 +1,22 @@
-using Autodesk.AutoCAD.Interop;
-using Autodesk.AutoCAD.Interop.Common;
-namespace cad_tools
+using System.Diagnostics;
+namespace tools
 {
-    public class open_cad_doc_by_name
+    public class open_cad_doc_by_shell
     {
 static public void run(string filePath)
 {
   
           
-            AcadApplication? acadApp =CadConnect.GetOrCreateInstance();
-            if (acadApp == null)
-            {
-                Console.WriteLine("错误：无法连接到 AutoCAD 应用程序。");
-                return;
-            }
+        
            if (File.Exists(filePath))
                     {
                       
                   
-                        // 打开文档 (ReadOnly=false, Password="")
-                        var doc = acadApp.Documents.Open(filePath, false, "");
-                        doc.Activate(); // 激活窗口
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = filePath,
+                            UseShellExecute = true
+                        });
                         
                         Console.WriteLine($" 已打开：{filePath}");
                     }

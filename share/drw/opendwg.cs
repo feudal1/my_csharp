@@ -43,7 +43,7 @@ namespace tools
             if (File.Exists(dwgFileName))
             {
 
-                open_cad_doc_by_name.run(dwgFileName);
+                open_cad_doc_by_shell.run(dwgFileName);
             }
             else
             {
