@@ -42,9 +42,7 @@ namespace tools
                       
                   
                 drawingDoc.GenerateViewPaletteViews(fullpath);
-                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1); 
- 
-                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R12);
+
                var view1 = drawingDoc.CreateDrawViewFromModelView3(fullpath, "*上视", 0.08, 0.10, 0);
                 if (view1 == null) Console.WriteLine("view=null");
                     if (view1==null) view1 = drawingDoc.CreateDrawViewFromModelView3(fullpath, "*Top", 0.13, 0.22, 0);

@@ -52,7 +52,7 @@ namespace tools
             }
  
 
-           var dwgFileName = outputfile + "\\" +  partname+"_"+body.Name + ".dwg";
+           var dwgFileName = outputfile + "\\" +  partname+ ".dwg";
             if(File.Exists(dwgFileName))
             {
                 Process.Start(new ProcessStartInfo

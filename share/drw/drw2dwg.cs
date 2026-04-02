@@ -62,7 +62,20 @@ namespace tools
             var swSheet = (Sheet)drawingDoc.IGetCurrentSheet();
             var swViews = (object[])swSheet.GetViews();
             var partDoc = ((SolidWorks.Interop.sldworks.View)swViews[1]).ReferencedDocument;
-          
+            swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1); 
+ swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
+
+            swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000); 
+            var boolstatus =
+                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowWidth, 0,
+                    0.002);
+            boolstatus =
+                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowHeight,
+                    0, 0.0005);
+            boolstatus =
+                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowLength,
+                    0, 0.0031);
+
             var thickness=get_thickness.run(partDoc);
             Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
             string outputfile = directory + "\\" + "出图" + "\\" + "工程图"+"\\"+ thickness.ToString() ;

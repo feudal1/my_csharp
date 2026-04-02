@@ -7,7 +7,7 @@ using SolidWorks.Interop.swconst;
 
 namespace tools
 {
-    public class drw2dwg
+    public class drw2dwgr12
     {
         static public string run(ModelDoc2 swModel, SldWorks swApp )
         {
@@ -64,7 +64,7 @@ namespace tools
             var partDoc = ((SolidWorks.Interop.sldworks.View)swViews[1]).ReferencedDocument;
             swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1); 
  
-            swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000); 
+            swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R12); 
             var boolstatus =
                 swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowWidth, 0,
                     0.002);

@@ -40,9 +40,7 @@ namespace tools
                     
                         DrawingDoc drawingDoc = (DrawingDoc)swModel;
                       
-                        swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1); 
- 
-                        swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000); 
+
                 drawingDoc.GenerateViewPaletteViews(fullpath);
               
                var view1 = drawingDoc.CreateDrawViewFromModelView3(fullpath, "*上视", 0.08, 0.10, 0);
@@ -56,7 +54,6 @@ namespace tools
             
               var view4 = drawingDoc.CreateFlatPatternViewFromModelView3( partdoc.GetPathName(), "",0.20, 0.15, 0,false,false);
         
-               
           
                swModel.EditRebuild3();
               swModel.SaveAs3(drwpath, 0, 0);
