@@ -27,7 +27,10 @@ public class checkk_factor
             }
         }
 
-
+        else if (Math.Abs(angle - 90) > 0.5 && Math.Abs(swCustBend.KFactor - 0.25) > 0.05)
+        {
+            Console.WriteLine($"非 90 度折弯，k 因子错误，{modelname}+{FeatureName},触发条件：角度≠90°且 K 因子≠0.25,当前值：角度={angle}°, K 因子={swCustBend.KFactor}");
+        }
 
         else if (swCustBend.Type == 4 && (debuct_factor < 1.6 || debuct_factor > 1.82))
         {
@@ -46,10 +49,7 @@ public class checkk_factor
 
         
     
-        else if (Math.Abs(angle - 90) > 0.5 && Math.Abs(swCustBend.KFactor - 0.25) > 0.05)
-        {
-            Console.WriteLine($"非 90 度折弯，k 因子错误，{modelname}+{FeatureName},触发条件：角度≠90°且 K 因子≠0.25,当前值：角度={angle}°, K 因子={swCustBend.KFactor}");
-        }
+     
         else
         {
             Debug.Print("      扣除倍数      = " + debuct_factor);
@@ -65,6 +65,7 @@ public class checkk_factor
         Debug.Print("      Type             = " + swCustBend.Type);
         Debug.Print("      thickness            = " + thickness);
         Debug.Print("      Radius = " + BendRadius + " mm");
+        Debug.Print("      angle = " + angle + "°");
 
     }
   

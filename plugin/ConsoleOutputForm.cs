@@ -24,7 +24,14 @@ namespace SolidWorksAddinStudy
         {
             this.Text = "实时输出";
             this.Size = new Size(800, 600);
-            this.StartPosition = FormStartPosition.CenterScreen;
+            this.StartPosition = FormStartPosition.Manual;
+            
+            // 设置窗口位置为屏幕右上角
+            Screen primaryScreen = Screen.PrimaryScreen;
+            this.Location = new Point(
+                primaryScreen.WorkingArea.Right - this.Width,
+                primaryScreen.WorkingArea.Top
+            );
 
             outputTextBox = new TextBox
             {
