@@ -19,13 +19,8 @@ namespace tools
             if (string.IsNullOrEmpty(directory))
             {
                 Console.WriteLine("错误：无法获取文件所在目录。");
-
+                return;
             }
-
-
-
-
-
 
 
 
@@ -36,18 +31,45 @@ namespace tools
             var swViews = (object[])swSheet.GetViews();
             var partDoc = ((SolidWorks.Interop.sldworks.View)swViews[1]).ReferencedDocument;
 
-            var thickness = get_thickness.run(partDoc);
-            Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
-            string outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString();
-            string dwgFileName = outputfile + "\\" + Path.GetFileNameWithoutExtension(fullpath) + ".dwg";
-            if (File.Exists(dwgFileName))
+            string outputfile;
+            bool is_cnc = false;
+            
+            if (partDoc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
             {
-
-                open_cad_doc_by_shell.run(dwgFileName);
+                Debug.WriteLine($"{partDoc.GetPathName()},type:assembly");
+                outputfile = directory + "\\" + "出图" + "\\" + "焊接图";
             }
             else
             {
-                Console.WriteLine($"错误：无法找到工程图。{outputfile}");
+                var thickness = get_thickness.run(partDoc);
+                Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
+
+                if (thickness == 0)
+                {
+                    outputfile = directory + "\\" + "出图" + "\\" + "CNC";
+                    is_cnc = true;
+                }
+                else
+                {
+                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString();
+                }
+            }
+
+            string dwgFileName = outputfile + "\\" + Path.GetFileNameWithoutExtension(fullpath) + ".dwg";
+            if (File.Exists(dwgFileName))
+            {
+                if (is_cnc)
+                {
+                    open_cad_doc_by_shell.run(dwgFileName);
+                }
+                else
+                {
+                    open_cad_doc_by_name.run( dwgFileName);
+                }
+            }
+            else
+            {
+                Console.WriteLine($"错误：无法找到工程图。{dwgFileName}");
 
             }
 

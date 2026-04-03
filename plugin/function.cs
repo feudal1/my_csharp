@@ -151,7 +151,7 @@ using System.Linq;
 
             // 添加名称到自定义信息
             add_name2info.run(swModel);
-            add_type2info.run(swModel);
+          
             // 创建新工程图
             New_drw.run(swApp, swModel);
             

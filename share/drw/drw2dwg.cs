@@ -29,7 +29,7 @@ namespace tools
             {
                 string pluginDir = Path.GetDirectoryName(typeof(drw2dwg).Assembly.Location);
               
-                string mapFilePath = Path.Combine(pluginDir, "dwgmaping");
+                string mapFilePath = Path.Combine(@"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates", "dwgmaping");
               
                 if (File.Exists(mapFilePath))
                 {
