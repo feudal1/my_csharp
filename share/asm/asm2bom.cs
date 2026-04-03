@@ -19,8 +19,14 @@ namespace tools
                     Console.WriteLine("错误：当前文档不是装配体。");
                     return -1;
                 }
+                string fullPath = swModel.GetPathName();
 
-            
+                if (string.IsNullOrEmpty(fullPath))
+                {
+                    Console.WriteLine("错误：文档尚未保存，请先保存文件。");
+                    return -1;
+                }
+                string? directory = Path.GetDirectoryName(fullPath) + "\\" + "出图";
 
                 ModelDocExtension swModelDocExt = (ModelDocExtension)swModel.Extension;
                 BomTableAnnotation swBOMAnnotation;
@@ -60,6 +66,7 @@ namespace tools
                 swModel.EditRebuild3();
                 Console.WriteLine($"deleteresult:{deleteresult},colunmname{colunmname}");
                 swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,2,"生产类型",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
+                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,3,"是否出图",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
                 var count = swTableAnnotation.RowCount;
                 TopologyLabeler.Initialize();
                 var database = TopologyLabeler.GetDatabase();
@@ -78,13 +85,26 @@ namespace tools
                     Debug.WriteLine($"partname:{partname}");
                     var partnumber=swTableAnnotation.get_Text(i, 0);
                  
+                    // 检查是否存在对应的 DWG 文件
+                    bool dwgExists = false;
+                    if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+                    {
+                        dwgExists = FindDwgFile(directory, partname);
+                    }
+                    
                     // 获取所有 body 及其标签，格式：bodyName1,label1;bodyName2,label2
                     string labelsString = database!.GetLabelsByPartName(partname);
                                         
                     if (string.IsNullOrEmpty(labelsString))
                     {
+                        if (dwgExists)
+                        {
+                            swTableAnnotation.set_Text(i, 3, "已出图");
+                        }
+                        else
+                        {
                             swTableAnnotation.set_Text(i, 3, "");
-                       
+                        }
                         
                         continue;
                     }
@@ -99,7 +119,7 @@ namespace tools
                         string[] parts = firstPair.Split(',');
                         string bodyName = parts[0];
                        string label = parts[1];
-                        swTableAnnotation.set_Text(i, 3, label);
+                        swTableAnnotation.set_Text(i, 3, dwgExists ? "已出图" : label);
                     
                     }
                   
@@ -126,6 +146,37 @@ namespace tools
                 Console.WriteLine($"发生错误：{ex.Message}");
                 Console.WriteLine(ex.StackTrace);
                 return -1;
+            }
+        }
+
+        /// <summary>
+        /// 在文件夹及其子文件夹中查找是否存在与零件名匹配的 DWG 文件
+        /// </summary>
+        /// <param name="directory">要搜索的目录</param>
+        /// <param name="partName">零件名称</param>
+        /// <returns>如果找到返回 true，否则返回 false</returns>
+        static private bool FindDwgFile(string directory, string partName)
+        {
+            try
+            {
+                // 搜索当前目录和所有子目录中的 DWG 文件
+                string[] dwgFiles = Directory.GetFiles(directory, "*.dwg", SearchOption.AllDirectories);
+                
+                foreach (string dwgFile in dwgFiles)
+                {
+                    string fileNameWithoutExt = Path.GetFileNameWithoutExtension(dwgFile);
+                    if (fileNameWithoutExt.Equals(partName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+                
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"搜索 DWG 文件时出错：{ex.Message}");
+                return false;
             }
         }
     }

@@ -9,7 +9,7 @@ namespace tools
 {
     public class drw2dwg
     {
-        static public string run(ModelDoc2 swModel, SldWorks swApp )
+        static public string run(ModelDoc2 swModel, SldWorks swApp, string exportType = "standard")
         {
             
             string fullpath = swModel.GetPathName();
@@ -62,10 +62,20 @@ namespace tools
             var swSheet = (Sheet)drawingDoc.IGetCurrentSheet();
             var swViews = (object[])swSheet.GetViews();
             var partDoc = ((SolidWorks.Interop.sldworks.View)swViews[1]).ReferencedDocument;
+            
             swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1); 
- swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
+            
+            // 根据导出类型设置字体和版本
+            if (exportType == "r12")
+            {
+                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R12);
+            }
+            else
+            {
+                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
+                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
+            }
 
-            swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000); 
             var boolstatus =
                 swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowWidth, 0,
                     0.002);
@@ -75,10 +85,40 @@ namespace tools
             boolstatus =
                 swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowLength,
                     0, 0.0031);
-
-            var thickness=get_thickness.run(partDoc);
-            Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
-            string outputfile = directory + "\\" + "出图" + "\\" + "工程图"+"\\"+ thickness.ToString() ;
+           
+            string outputfile;
+            
+            // 根据导出类型确定输出路径
+            if (exportType == "r12")
+            {
+                var thickness = get_thickness.run(partDoc);
+                Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
+                outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString();
+            }
+            else if (exportType == "weld")
+            {
+                Debug.WriteLine($"{partDoc.GetPathName()}");
+                outputfile = directory + "\\" + "出图" + "\\" + "焊接图";
+            }
+            else // standard
+            {
+                var thickness = get_thickness.run(partDoc);
+                Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
+                
+                if (thickness == 0)
+                {
+                    outputfile = directory + "\\" + "出图" + "\\" + "CNC";
+                }
+                else if (partDoc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
+                {
+                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString() + "\\" + "焊接图";
+                }
+                else
+                {
+                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString();
+                }
+            }
+            
             if (!Directory.Exists(outputfile))
             {
                 Directory.CreateDirectory(outputfile);

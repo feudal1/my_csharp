@@ -26,7 +26,7 @@ namespace tools
                   return;
                  }
                  
-              swApp.NewDocument(@"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates\gb_a4.drwdot", 0, 0, 0);
+              swApp.NewDocument(@"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates\my_a4.drwdot", 0, 0, 0);
                
                swModel = (ModelDoc2)swApp.ActiveDoc;
                   if (swModel.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
