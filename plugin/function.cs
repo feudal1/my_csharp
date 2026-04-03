@@ -231,7 +231,35 @@ using System.Linq;
             swApp?.SendMsgToUser($"工程图dwg打开失败：{ex.Message}");
         }
     }
+    [Command(1009, "新建装配体工程图", "为当前装配体创建工程图并添加视图和 BOM 表", "asmnewdrw", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private void AsmNewDrw()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
 
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+           
+            // 创建新装配体工程图
+            Asm_new_drw.run(swApp, swModel);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"装配体工程图创建失败：{ex.Message}");
+            swApp?.SendMsgToUser($"装配体工程图创建失败：{ex.Message}");
+        }
+    }
     [Command(1007, "装配体批量检查展开", "检查装配体中所有零件的展开情况", "asm2check", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void Asm2check()
     {
@@ -292,6 +320,8 @@ using System.Linq;
             swApp?.SendMsgToUser($"装配体 BOM 导出失败：{ex.Message}");
         }
     }
+
+
 
     
 }}
