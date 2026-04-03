@@ -9,7 +9,7 @@ namespace tools
 {
     public class drw2dwg
     {
-        static public string run(ModelDoc2 swModel, SldWorks swApp, string exportType = "standard")
+        static public string run(ModelDoc2 swModel, SldWorks swApp)
         {
             
             string fullpath = swModel.GetPathName();
@@ -65,17 +65,34 @@ namespace tools
             
             swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale, 1); 
             
-            // 根据导出类型设置字体和版本
-            if (exportType == "r12")
+            string outputfile;
+            
+            // 先判断是否为装配体，是装配体就不是 CNC
+            if (partDoc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
             {
-                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R12);
+                Debug.WriteLine($"{partDoc.GetPathName()},type:assembly");
+                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
+                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
+                outputfile = directory + "\\" + "出图" + "\\" + "焊接图";
             }
             else
             {
-                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
-                swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
+                var thickness = get_thickness.run(partDoc);
+                Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
+                
+                if (thickness == 0)
+                {
+                    swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R12);
+                    outputfile = directory + "\\" + "出图" + "\\" + "CNC";
+                }
+                else
+                {
+                    swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
+                    swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
+                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString();
+                }
             }
-
+            
             var boolstatus =
                 swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowWidth, 0,
                     0.002);
@@ -86,39 +103,6 @@ namespace tools
                 swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowLength,
                     0, 0.0031);
            
-            string outputfile;
-            
-            // 根据导出类型确定输出路径
-            if (exportType == "r12")
-            {
-                var thickness = get_thickness.run(partDoc);
-                Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
-                outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString();
-            }
-            else if (exportType == "weld")
-            {
-                Debug.WriteLine($"{partDoc.GetPathName()}");
-                outputfile = directory + "\\" + "出图" + "\\" + "焊接图";
-            }
-            else // standard
-            {
-                var thickness = get_thickness.run(partDoc);
-                Debug.WriteLine($"{partDoc.GetPathName()},thickness:{thickness}");
-                
-                if (thickness == 0)
-                {
-                    outputfile = directory + "\\" + "出图" + "\\" + "CNC";
-                }
-                else if (partDoc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
-                {
-                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString() + "\\" + "焊接图";
-                }
-                else
-                {
-                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString();
-                }
-            }
-            
             if (!Directory.Exists(outputfile))
             {
                 Directory.CreateDirectory(outputfile);

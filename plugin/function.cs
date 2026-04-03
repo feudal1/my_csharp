@@ -151,7 +151,7 @@ using System.Linq;
 
             // 添加名称到自定义信息
             add_name2info.run(swModel);
-            
+            add_type2info.run(swModel);
             // 创建新工程图
             New_drw.run(swApp, swModel);
             
@@ -229,6 +229,67 @@ using System.Linq;
         {
             Debug.WriteLine($"工程图dwg打开失败：{ex.Message}");
             swApp?.SendMsgToUser($"工程图dwg打开失败：{ex.Message}");
+        }
+    }
+
+    [Command(1007, "装配体批量检查展开", "检查装配体中所有零件的展开情况", "asm2check", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private void Asm2check()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+           
+            asm2do.run(swApp, swModel, (model, app) => {
+                checkk_factor.run(app, model);
+                return 0;
+            });
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"装配体检查展开失败：{ex.Message}");
+            swApp?.SendMsgToUser($"装配体检查展开失败：{ex.Message}");
+        }
+    }
+
+     [Command(1008, "装配体导出 BOM", "生成装配体 BOM 表并导出为 Excel", "asm2bom", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private async void Asm2bom()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+           
+            await asm2bom.run(swApp, swModel);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"装配体 BOM 导出失败：{ex.Message}");
+            swApp?.SendMsgToUser($"装配体 BOM 导出失败：{ex.Message}");
         }
     }
 
