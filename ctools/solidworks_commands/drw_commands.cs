@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using SolidWorks.Interop.sldworks;
@@ -76,7 +77,13 @@ namespace tools
                 }
             }
         }
-
+ [Command("analyze_face", Description = "分析当前选中的面（面积、类型、法向等）", Parameters = "需先在 SolidWorks 中选择面", Group = "solidworks")]
+        static void AnalyzeFaceCommand(string[] args)
+        {
+            if (swModel == null) return;
+                
+            select_face_recognize.run(swModel);
+        }
         [Command("drw2png", Description = "将工程图转换为 NPG 格式", Parameters = "无", Group = "solidworks")]
         static void Drw2NpgCommand(string[] args)
         {

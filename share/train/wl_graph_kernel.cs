@@ -15,9 +15,9 @@ namespace tools
         /// 执行 WL 迭代，更新节点标签（返回所有轮次迭代结果）
         /// </summary>
         /// <param name="graph">零件图或 Body 图</param>
-        /// <param name="iterations">迭代次数</param>
+        /// <param name="iterations">迭代次数（默认 3 层）</param>
         /// <returns>每次迭代后的标签频率列表（包含初始和所有迭代轮次）</returns>
-        public static List<Dictionary<string, int>> PerformWLIterations(BodyGraph graph, int iterations = 1)
+        public static List<Dictionary<string, int>> PerformWLIterations(BodyGraph graph, int iterations = 3)
         {
             var labelFrequenciesPerIter = new List<Dictionary<string, int>>();
                     
@@ -37,7 +37,7 @@ namespace tools
             var initialFreq = CountLabelFrequencies(graph);
             labelFrequenciesPerIter.Add(initialFreq);
         
-            Console.WriteLine($"  Body [{graph.BodyName}] 迭代 0: {initialFreq.Count} 种标签");
+            Console.WriteLine($"  [{graph.FullBodyName}] 迭代 0: {initialFreq.Count} 种标签");
             for (int iter = 1; iter <= iterations; iter++)
             {
                 // 为每个节点生成新标签
@@ -66,7 +66,7 @@ namespace tools
                 var freq = CountLabelFrequencies(graph);
                 labelFrequenciesPerIter.Add(freq);
                         
-                Console.WriteLine($"  Body [{graph.BodyName}] 迭代 {iter}: {freq.Count} 种标签");
+                Console.WriteLine($"  [{graph.FullBodyName}] 迭代 {iter}: {freq.Count} 种标签");
             }
         
             // 所有迭代完成后，生成最终的 WL 图指纹
@@ -77,9 +77,88 @@ namespace tools
         }
 
         /// <summary>
+        /// 执行 WL 迭代（Face 图版本）
+        /// </summary>
+        /// <param name="graph">Face 图</param>
+        /// <param name="iterations">迭代次数（默认 3 层）</param>
+        /// <returns>每次迭代后的标签频率列表</returns>
+        public static List<Dictionary<string, int>> PerformWLIterations(FaceGraph graph, int iterations = 3)
+        {
+            var labelFrequenciesPerIter = new List<Dictionary<string, int>>();
+                    
+            if (graph == null || graph.Nodes.Count == 0)
+            {
+                Console.WriteLine("警告：空图，无法执行 WL 迭代");
+                return labelFrequenciesPerIter;
+            }
+        
+            // 初始化所有节点的标签
+            foreach (var node in graph.Nodes)
+            {
+                node.CurrentLabel = node.FaceType;
+            }
+        
+            // 统计初始迭代的标签频率 (迭代 0)
+            var initialFreq = CountLabelFrequencies(graph);
+            labelFrequenciesPerIter.Add(initialFreq);
+        
+            Console.WriteLine($"  [{graph.FullFaceName}] 迭代 0: {initialFreq.Count} 种标签");
+            for (int iter = 1; iter <= iterations; iter++)
+            {
+                // 为每个节点生成新标签
+                var newLabels = new Dictionary<int, string>();
+                        
+                foreach (var node in graph.Nodes)
+                {
+                    // 收集邻居标签并排序
+                    var neighborLabels = node.NeighborIds
+                        .Select(neighborId => graph.Nodes[neighborId].CurrentLabel)
+                        .OrderBy(label => label)
+                        .ToList();
+        
+                    // 构造新标签：当前标签 + 排序后的邻居标签集合
+                    string combinedLabel = CombineLabels(node.CurrentLabel, neighborLabels);
+                    newLabels[node.Id] = combinedLabel;
+                }
+        
+                // 更新所有节点的标签
+                foreach (var node in graph.Nodes)
+                {
+                    node.CurrentLabel = newLabels[node.Id];
+                }
+        
+                // 统计本次迭代的标签频率
+                var freq = CountLabelFrequencies(graph);
+                labelFrequenciesPerIter.Add(freq);
+                        
+                Console.WriteLine($"  [{graph.FullFaceName}] 迭代 {iter}: {freq.Count} 种标签");
+            }
+        
+            // 所有迭代完成后，生成最终的 WL 图指纹
+            PrintFirst20CharsForFace(graph, $"完成");
+                    
+            // 返回所有迭代轮次的频率数据，由调用者决定如何使用
+            return labelFrequenciesPerIter;
+        }
+
+        /// <summary>
         /// 打印图中第一个节点的前 20 个字符标签
         /// </summary>
         private static void PrintFirst20Chars(BodyGraph graph, string iterInfo)
+        {
+            if (graph.Nodes.Count == 0) return;
+            
+            var firstNode = graph.Nodes[0];
+            string label = firstNode.CurrentLabel ?? "";
+            string displayText = label.Length <= 20 ? label : label.Substring(0, 20);
+            
+            Console.WriteLine($"    [{iterInfo}] 首个面标签前 20 字符：{displayText}");
+        }
+
+        /// <summary>
+        /// 打印 Face 图中第一个节点的前 20 个字符标签
+        /// </summary>
+        private static void PrintFirst20CharsForFace(FaceGraph graph, string iterInfo)
         {
             if (graph.Nodes.Count == 0) return;
             
@@ -124,9 +203,28 @@ namespace tools
         }
 
         /// <summary>
-        /// 统计图中各标签的出现频率
+        /// 统计 Body 图中各标签的出现频率
         /// </summary>
         private static Dictionary<string, int> CountLabelFrequencies(BodyGraph graph)
+        {
+            var frequency = new Dictionary<string, int>();
+            
+            foreach (var node in graph.Nodes)
+            {
+                if (!frequency.ContainsKey(node.CurrentLabel))
+                {
+                    frequency[node.CurrentLabel] = 0;
+                }
+                frequency[node.CurrentLabel]++;
+            }
+            
+            return frequency;
+        }
+
+        /// <summary>
+        /// 统计 Face 图中各标签的出现频率
+        /// </summary>
+        private static Dictionary<string, int> CountLabelFrequencies(FaceGraph graph)
         {
             var frequency = new Dictionary<string, int>();
             

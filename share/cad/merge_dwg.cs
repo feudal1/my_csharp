@@ -14,7 +14,7 @@ namespace cad_tools
         /// <param name="x">插入点 X 坐标</param>
         /// <param name="y">插入点 Y 坐标</param>
         /// <returns>返回 [maxX, maxY]，失败返回 null</returns>
-        static public double[]? run(string sourcePath, double x, double y)
+        static public double[]? run(string sourcePath, double x, double y, bool isDim)
         {
             if (sourcePath.Contains(".dwl2") || sourcePath.Contains(".dwl"))
             {
@@ -41,7 +41,7 @@ namespace cad_tools
 
                 string xrefPath = sourcePath;
                 string baseName = Path.GetFileNameWithoutExtension(xrefPath);
-                string xrefName = $"{baseName}_{Guid.NewGuid():N}";
+                string xrefName = isDim ? $"{baseName}_{Guid.NewGuid():N}" : baseName;
 
                 object insertionPoint = new double[] { 0, 0, 0.0 };
                 var reference=acadDoc.ModelSpace.AttachExternalReference(
@@ -79,7 +79,7 @@ namespace cad_tools
                                 
                 Console.WriteLine($"  归零后尺寸：宽={relativeMaxX:F2}, 高={relativeMaxY:F2}");
                 acadDoc.Blocks.Item(xrefName).Bind(false);
-                                
+                    
                 return new double[] { relativeMaxX, relativeMaxY };
             }
             catch (Exception ex)

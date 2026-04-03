@@ -48,7 +48,7 @@ public class checkk_factor
         }
 
         
-    
+
      
         else
         {

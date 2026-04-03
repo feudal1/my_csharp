@@ -97,6 +97,17 @@ namespace tools
                         UNIQUE(part_id, body_name)
                     );";
 
+                // 创建 face 表（新增，用于 face 级别标注）
+                string createFacesTable = @"
+                    CREATE TABLE IF NOT EXISTS faces (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        body_id INTEGER NOT NULL,
+                        face_index INTEGER NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (body_id) REFERENCES bodies(id) ON DELETE CASCADE,
+                        UNIQUE(body_id, face_index)
+                    );";
+
                 // 创建 WL 迭代结果表
                 string createWLResultsTable = @"
                     CREATE TABLE IF NOT EXISTS wl_results (
@@ -106,6 +117,17 @@ namespace tools
                         label_frequencies TEXT NOT NULL,
                         FOREIGN KEY (body_id) REFERENCES bodies(id) ON DELETE CASCADE,
                         UNIQUE(body_id, iteration)
+                    );";
+
+                // 创建 face WL 结果表（新增）
+                string createFaceWLResultsTable = @"
+                    CREATE TABLE IF NOT EXISTS face_wl_results (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        face_id INTEGER NOT NULL,
+                        iteration INTEGER NOT NULL,
+                        label_frequencies TEXT NOT NULL,
+                        FOREIGN KEY (face_id) REFERENCES faces(id) ON DELETE CASCADE,
+                        UNIQUE(face_id, iteration)
                     );";
 
                 // 创建用户标注表（添加唯一性约束，防止同一个 body 的同一类别有多个标注）
@@ -120,6 +142,20 @@ namespace tools
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (body_id) REFERENCES bodies(id) ON DELETE CASCADE,
                         UNIQUE(body_id, label_category)
+                    );";
+
+                // 创建 face 标注表（新增）
+                string createFaceLabelsTable = @"
+                    CREATE TABLE IF NOT EXISTS face_user_labels (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        face_id INTEGER NOT NULL,
+                        label_category TEXT NOT NULL,
+                        label_value TEXT NOT NULL,
+                        confidence REAL DEFAULT 1.0,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (face_id) REFERENCES faces(id) ON DELETE CASCADE,
+                        UNIQUE(face_id, label_category)
                     );";
 
                 // 创建索引
@@ -139,10 +175,19 @@ namespace tools
                     command.CommandText = createBodiesTable;
                     command.ExecuteNonQuery();
 
+                    command.CommandText = createFacesTable;
+                    command.ExecuteNonQuery();
+
                     command.CommandText = createWLResultsTable;
                     command.ExecuteNonQuery();
 
+                    command.CommandText = createFaceWLResultsTable;
+                    command.ExecuteNonQuery();
+
                     command.CommandText = createLabelsTable;
+                    command.ExecuteNonQuery();
+
+                    command.CommandText = createFaceLabelsTable;
                     command.ExecuteNonQuery();
 
                     command.CommandText = createIndexes;
@@ -347,6 +392,278 @@ namespace tools
                 // 返回新插入的 ID
                 cmd.CommandText = "SELECT last_insert_rowid()";
                 return Convert.ToInt32(cmd.ExecuteScalar());
+            }
+        }
+
+        /// <summary>
+        /// 根据名称获取或创建 body 记录（公开方法）
+        /// </summary>
+        public int GetOrCreateBodyByNames(int partId, string bodyName)
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                return GetOrCreateBody(connection, partId, bodyName);
+            }
+        }
+
+        /// <summary>
+        /// 获取或创建 face 记录
+        /// </summary>
+        public int GetOrCreateFace(int bodyId, int faceIndex)
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 先尝试查找
+                string select = "SELECT id FROM faces WHERE body_id = @body_id AND face_index = @face_index";
+                using (var cmd = new SQLiteCommand(select, connection))
+                {
+                    cmd.Parameters.AddWithValue("@body_id", bodyId);
+                    cmd.Parameters.AddWithValue("@face_index", faceIndex);
+                    var result = cmd.ExecuteScalar();
+                    if (result != null)
+                    {
+                        return Convert.ToInt32(result);
+                    }
+                }
+
+                // 不存在则插入
+                string insert = @"
+                    INSERT INTO faces (body_id, face_index) 
+                    VALUES (@body_id, @face_index)";
+                
+                using (var cmd = new SQLiteCommand(insert, connection))
+                {
+                    cmd.Parameters.AddWithValue("@body_id", bodyId);
+                    cmd.Parameters.AddWithValue("@face_index", faceIndex);
+                    cmd.ExecuteNonQuery();
+                    
+                    // 返回新插入的 ID
+                    cmd.CommandText = "SELECT last_insert_rowid()";
+                    return Convert.ToInt32(cmd.ExecuteScalar());
+                }
+            }
+        }
+
+        /// <summary>
+        /// 保存 Face 的 WL 结果
+        /// </summary>
+        public void SaveFaceWLResult(int faceId, int iteration, Dictionary<string, int> frequencies)
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 删除旧的 WL 结果
+                string deleteOld = "DELETE FROM face_wl_results WHERE face_id = @face_id AND iteration = @iteration";
+                using (var cmd = new SQLiteCommand(deleteOld, connection))
+                {
+                    cmd.Parameters.AddWithValue("@face_id", faceId);
+                    cmd.Parameters.AddWithValue("@iteration", iteration);
+                    cmd.ExecuteNonQuery();
+                }
+                
+                // 插入新的 WL 结果
+                string insert = @"
+                    INSERT INTO face_wl_results (face_id, iteration, label_frequencies) 
+                    VALUES (@face_id, @iteration, @frequencies)";
+                
+                using (var cmd = new SQLiteCommand(insert, connection))
+                {
+                    cmd.Parameters.AddWithValue("@face_id", faceId);
+                    cmd.Parameters.AddWithValue("@iteration", iteration);
+                    cmd.Parameters.AddWithValue("@frequencies", JsonConvert.SerializeObject(frequencies));
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 添加 Face 标注
+        /// </summary>
+        public void AddFaceLabel(int faceId, string category, string value, double confidence = 1.0, string? notes = null)
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 先删除该 category 的旧标注
+                string deleteOld = "DELETE FROM face_user_labels WHERE face_id = @face_id AND label_category = @category";
+                using (var cmd = new SQLiteCommand(deleteOld, connection))
+                {
+                    cmd.Parameters.AddWithValue("@face_id", faceId);
+                    cmd.Parameters.AddWithValue("@category", category);
+                    cmd.ExecuteNonQuery();
+                }
+                
+                // 插入新标注
+                string insert = @"
+                    INSERT INTO face_user_labels (face_id, label_category, label_value, confidence, notes)
+                    VALUES (@face_id, @category, @value, @confidence, @notes)";
+
+                using (var cmd = new SQLiteCommand(insert, connection))
+                {
+                    cmd.Parameters.AddWithValue("@face_id", faceId);
+                    cmd.Parameters.AddWithValue("@category", category);
+                    cmd.Parameters.AddWithValue("@value", value);
+                    cmd.Parameters.AddWithValue("@confidence", confidence);
+                    cmd.Parameters.AddWithValue("@notes", notes ?? (object)DBNull.Value);
+                    cmd.ExecuteNonQuery();
+                }
+
+                Console.WriteLine($"✓ 已标注：{category} = {value} (置信度：{confidence})");
+            }
+        }
+
+        /// <summary>
+        /// 根据 WL 标签频率查找具有相似拓扑特征的 face 及其标注
+        /// </summary>
+        /// <param name="wlFrequencies">待查询零件的 WL 标签频率列表</param>
+        /// <param name="topK">返回最相似的 K 个结果</param>
+        /// <param name="minSimilarity">最小相似度阈值</param>
+        /// <returns>face 及其标注、相似度的列表</returns>
+        public List<(int PartId, string PartName, int BodyId, string BodyName, int FaceId, int FaceIndex,
+                     string LabelCategory, string LabelValue, 
+                     double Similarity, double Confidence, string Notes)> 
+            FindFacesByWLTags(
+                List<Dictionary<string, int>> wlFrequencies, 
+                int topK = 10, 
+                double minSimilarity = 0.3)
+        {
+            var results = new List<(int, string, int, string, int, int, string, string, double, double, string)>();
+            
+            if (wlFrequencies.Count == 0)
+            {
+                Console.WriteLine("警告：WL 频率数据为空");
+                return results;
+            }
+
+            // 使用最后一轮迭代进行比较
+            int queryIteration = wlFrequencies.Count - 1;
+            
+            Console.WriteLine($"\n[调试] 查询参数：minSimilarity={minSimilarity}, topK={topK}, iteration={queryIteration}");
+            Console.WriteLine($"[调试] 查询的 WL 频率：{JsonConvert.SerializeObject(wlFrequencies[queryIteration])}");
+
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                
+                // 获取所有已标注 face 及其 WL 结果（使用相同的迭代轮次）
+                string query = @"
+                    SELECT p.id, p.part_name, b.id, b.body_name, f.id, f.face_index, 
+                           ful.label_category, ful.label_value, ful.confidence, ful.notes, 
+                           fwlr.label_frequencies
+                    FROM parts p
+                    INNER JOIN bodies b ON p.id = b.part_id
+                    INNER JOIN faces f ON b.id = f.body_id
+                    INNER JOIN face_wl_results fwlr ON f.id = fwlr.face_id
+                    INNER JOIN face_user_labels ful ON f.id = ful.face_id
+                    WHERE fwlr.iteration = @iteration
+                    ORDER BY p.part_name, b.body_name, f.face_index";
+
+                var faceData = new Dictionary<(string, string, int), (BodyWLData data, int partId, int bodyId, int faceIndex)>();
+
+                using (var cmd = new SQLiteCommand(query, connection))
+                {
+                    cmd.Parameters.AddWithValue("@iteration", queryIteration);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            int partId = reader.GetInt32(0);
+                            string partName = reader.GetString(1);
+                            int bodyId = reader.GetInt32(2);
+                            string bodyName = reader.GetString(3);
+                            int dbFaceId = reader.GetInt32(4);
+                            int faceIndex = reader.GetInt32(5);
+                            string category = reader.GetString(6);
+                            string value = reader.GetString(7);
+                            double confidence = reader.GetDouble(8);
+                            string notes = reader.IsDBNull(9) ? "" : reader.GetString(9);
+                            string freqJson = reader.GetString(10);
+
+                            var frequencies = JsonConvert.DeserializeObject<Dictionary<string, int>>(freqJson);
+                            
+                            if (frequencies == null)
+                            {
+                                Console.WriteLine($"警告：无法解析 face {partName}/{bodyName}/Face{faceIndex} 的 WL 频率数据");
+                                continue;
+                            }
+
+                            var key = (partName, bodyName, faceIndex);
+                            if (!faceData.ContainsKey(key))
+                            {
+                                faceData[key] = (new BodyWLData(), partId, bodyId, faceIndex);
+                            }
+
+                            // 只取最后一轮迭代
+                            if (faceData[key].data.WLFreqs.Count == 0)
+                            {
+                                faceData[key].data.WLFreqs.Add(frequencies);
+                            }
+
+                            faceData[key].data.Labels.Add(new LabelData(category, value, confidence, notes));
+                        }
+                    }
+                }
+
+                // 计算与每个 face 的相似度
+                Console.WriteLine($"\n[调试] 从数据库加载了 {faceData.Count} 个已标注 face");
+                
+                foreach (var kvp in faceData)
+                {
+                    string partName = kvp.Key.Item1;
+                    string bodyName = kvp.Key.Item2;
+                    int faceIndex = kvp.Key.Item3;
+                    var (data, partId, bodyId, _) = kvp.Value;
+                    
+                    double similarity = WLGraphKernel.CalculateSimilarity(wlFrequencies[queryIteration], data.WLFreqs[0]);
+                    
+                    // 获取第一个标注的 label_value 用于显示
+                    string labelValue = data.Labels.Count > 0 ? data.Labels[0].Value : "无标注";
+                    Console.WriteLine($"[调试] {partName}+{bodyName}+Face{faceIndex}: 相似度={similarity:F3}, labelValue={labelValue} (阈值={minSimilarity})");
+                    
+                    if (similarity >= minSimilarity)
+                    {
+                        // 获取 face ID
+                        int dbFaceId = GetFaceId(bodyId, faceIndex);
+                        
+                        foreach (var label in data.Labels)
+                        {
+                            results.Add((partId, partName, bodyId, bodyName, dbFaceId, faceIndex, label.Category, label.Value, similarity, label.Confidence, label.Notes));
+                        }
+                    }
+                }
+
+                // 按相似度降序排序并取 Top-K
+                results = results
+                    .OrderByDescending(r => r.Item9)  // Similarity
+                    .ThenByDescending(r => r.Item10)  // Confidence
+                    .Take(topK)
+                    .ToList();
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// 根据 body ID 和 face index 获取 face ID
+        /// </summary>
+        private int GetFaceId(int bodyId, int faceIndex)
+        {
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                string query = "SELECT id FROM faces WHERE body_id = @body_id AND face_index = @face_index";
+                using (var cmd = new SQLiteCommand(query, connection))
+                {
+                    cmd.Parameters.AddWithValue("@body_id", bodyId);
+                    cmd.Parameters.AddWithValue("@face_index", faceIndex);
+                    var result = cmd.ExecuteScalar();
+                    return result != null ? Convert.ToInt32(result) : -1;
+                }
             }
         }
 

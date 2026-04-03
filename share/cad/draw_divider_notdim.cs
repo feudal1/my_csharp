@@ -4,7 +4,7 @@ using System;
 
 namespace cad_tools
 {
-    public class draw_divider
+    public class draw_divider_not_dim
     {
 
         /// <summary>
@@ -102,9 +102,9 @@ namespace cad_tools
                 foreach (var dwgFile in dwgFiles)
                 {
                     Console.WriteLine($"  插入文件：{Path.GetFileName(dwgFile)}, 位置=({dwgCurrentX:F2}, {currentY:F2})");
-                    var maxPoint = merge_dwg.run(dwgFile, dwgCurrentX, currentY, true);
+                    var maxPoint = merge_dwg.run(dwgFile, dwgCurrentX, currentY, false);
                     
-                    if (maxPoint != null)
+                    if (maxPoint != null)   
                     {
                         double partMaxX = maxPoint[0];
                         double partMaxY = maxPoint[1];

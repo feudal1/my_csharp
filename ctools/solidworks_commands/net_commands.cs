@@ -152,6 +152,218 @@ namespace tools
             // 显示统计信息
             TopologyLabeler.ShowStatistics();
         }
+
+        /// <summary>
+        /// 标注当前零件的所有 face（Face 级别标注，3 层 WL 迭代）
+        /// </summary>
+        [Command("label_face", Description = "标注当前零件的所有 face（使用 3 层 WL 迭代）。用法：label_face [值] - 将每个 face 作为独立单元进行标注", Parameters = "[值]", Group = "train")]
+        static void LabelAllFaces(string[] args)
+        {
+            if (Program.SwModel == null)
+            {
+                Console.WriteLine("错误：请先打开一个零件文档");
+                return;
+            }
+        
+            Console.WriteLine("=== 批量标注所有 Face（3 层 WL 迭代）===\n");
+                    
+            // 构建所有 Face 的拓扑图
+            var faceGraphs = FaceGraphBuilder.BuildFaceGraphs(Program.SwModel);
+                    
+            if (faceGraphs.Count == 0)
+            {
+                Console.WriteLine("× 无法构建 Face 拓扑图");
+                return;
+            }
+        
+            // 获取零件信息
+            string partName = Program.SwModel.GetTitle();
+            string fullPath = Program.SwModel.GetPathName();
+        
+            // 初始化数据库
+            TopologyLabeler.Initialize();
+            var database = TopologyLabeler.GetDatabase();
+            
+            // 插入零件记录
+            int partId = database!.InsertPart(partName, fullPath);
+            
+            var faceIds = new List<int>();
+            
+            // 处理每个 face
+            Console.WriteLine($"\n=== 执行 3 层 WL 迭代并存储 ===");
+            foreach (var faceGraph in faceGraphs)
+            {
+                // 执行 3 层 WL 迭代
+                var wlFreqs = WLGraphKernel.PerformWLIterations(faceGraph, iterations: 3);
+                
+                // 获取或创建 body 记录
+                int bodyId = database.GetOrCreateBodyByNames(partId, faceGraph.BodyName);
+                
+                // 创建 face 记录
+                int faceId = database.GetOrCreateFace(bodyId, faceGraph.FaceId);
+                faceIds.Add(faceId);
+                
+                // 保存 WL 结果（所有迭代轮次）
+                for (int iter = 0; iter < wlFreqs.Count; iter++)
+                {
+                    database.SaveFaceWLResult(faceId, iter, wlFreqs[iter]);
+                }
+                
+                Console.WriteLine($"  ✓ Face [{faceGraph.FullFaceName}] 已存储 ({faceGraph.Nodes.Count} 个相邻面)");
+            }
+            
+            // 检查参数
+            if (args.Length < 1)
+            {
+                Console.WriteLine("\n=== 未提供标注值，请手动输入 ===");
+                Console.WriteLine("\n用法：label_face [值]");
+                Console.WriteLine("示例:");
+                Console.WriteLine("  label_face 安装面");
+                Console.WriteLine("  label_face 密封面");
+                Console.WriteLine("  label_face 配合面");
+                return;
+            }
+        
+            string value = args[0];
+        
+            // 标注所有 face
+            Console.WriteLine($"\n正在标注 {faceIds.Count} 个 face 为 '{value}'...\n");
+                    
+            for (int i = 0; i < faceIds.Count; i++)
+            {
+                string category = "功能面类型";
+                database.AddFaceLabel(faceIds[i], category, value, confidence: 1.0, notes: "批量标注");
+                Console.WriteLine($"  ✓ Face [{i}] {faceGraphs[i].FullFaceName} → {value}");
+            }
+        
+            Console.WriteLine($"\n✓ 成功标注 {faceIds.Count} 个 face");
+        
+            // 显示统计信息
+            TopologyLabeler.ShowStatistics();
+        }
+
+        /// <summary>
+        /// 查找与当前零件 face 相似的已标注 face（使用 3 层 WL 迭代）
+        /// </summary>
+        [Command("find_face", Description = "查询当前零件的相似 face 标注（使用 3 层 WL 拓扑匹配）。用法：find_face [可选的：返回数量，默认 10] [可选的：最小相似度，默认 0.3]", Parameters = "[可选的：topK] [可选的：minSimilarity]", Group = "train")]
+        static void FindFaceLabels(string[] args)
+        {
+            if (Program.SwModel == null)
+            {
+                Console.WriteLine("错误：请先打开一个零件文档");
+                return;
+            }
+    
+            int topK = 10;
+            double minSimilarity = 0.3;
+    
+            if (args.Length > 0 && int.TryParse(args[0], out int k))
+            {
+                topK = k;
+            }
+    
+            if (args.Length > 1 && double.TryParse(args[1], out double sim))
+            {
+                minSimilarity = sim;
+            }
+    
+            Console.WriteLine("=== 使用 WL 标签查找相似的 Face 标注 ===\n");
+                 
+            // 构建所有 Face 的拓扑图
+            var faceGraphs = FaceGraphBuilder.BuildFaceGraphs(Program.SwModel);
+                    
+            if (faceGraphs.Count == 0)
+            {
+                Console.WriteLine("× 无法构建 Face 拓扑图");
+                return;
+            }
+    
+            // 初始化数据库
+            TopologyLabeler.Initialize();
+            var database = TopologyLabeler.GetDatabase();
+            
+            // 合并所有 face 的 WL 频率（用于查询）
+            Console.WriteLine($"\n=== 执行 3 层 WL 迭代 ===");
+            var combinedFrequencies = new List<Dictionary<string, int>>();
+            
+            foreach (var faceGraph in faceGraphs)
+            {
+                var wlFreq = WLGraphKernel.PerformWLIterations(faceGraph, iterations: 3);
+                if (combinedFrequencies.Count == 0)
+                {
+                    combinedFrequencies = wlFreq;
+                }
+                else
+                {
+                    // 合并频率
+                    for (int i = 0; i < wlFreq.Count; i++)
+                    {
+                        foreach (var kvp in wlFreq[i])
+                        {
+                            if (!combinedFrequencies[i].ContainsKey(kvp.Key))
+                                combinedFrequencies[i][kvp.Key] = 0;
+                            combinedFrequencies[i][kvp.Key] += kvp.Value;
+                        }
+                    }
+                }
+            }
+    
+            // 查找相似的标注
+            Console.WriteLine("\n=== 查找相似的用户标注 ===");
+            int lastIter = combinedFrequencies.Count - 1;
+            Console.WriteLine($"使用合并后的 WL 频率（迭代 {lastIter}）");
+            
+            var matches = database!.FindFacesByWLTags(combinedFrequencies, topK: topK, minSimilarity: minSimilarity);
+            
+            if (matches.Count == 0)
+            {
+                Console.WriteLine("未找到相似的已标注 face");
+                return;
+            }
+
+            // 显示结果
+            Console.WriteLine($"\n{'=',80}");
+            Console.WriteLine("TOP-5 相似标注 Face");
+            Console.WriteLine($"{'=',80}\n");
+
+            var top5 = matches.Take(5).ToList();
+            for (int i = 0; i < top5.Count; i++)
+            {
+                var (partId, partName, bodyId, bodyName, faceId, faceIndex, labelCategory, labelValue, similarity, confidence, notes) = matches[i];
+                Console.WriteLine($"{i + 1}. Face：{partName}+{bodyName}+Face{faceIndex}");
+                Console.WriteLine($"   标注：{labelCategory} = {labelValue}");
+                Console.WriteLine($"   相似度：{similarity:F3} ({similarity * 100:F1}%)");
+                Console.WriteLine($"   置信度：{confidence:F2}");
+                if (!string.IsNullOrEmpty(notes))
+                {
+                    Console.WriteLine($"   备注：{notes}");
+                }
+                Console.WriteLine();
+            }
+
+            Console.WriteLine($"{'=',80}\n");
+            
+            // 显示详细匹配结果
+            Console.WriteLine($"{'=',80}");
+            Console.WriteLine("详细匹配结果");
+            Console.WriteLine($"{'=',80}\n");
+
+            for (int i = 0; i < matches.Count; i++)
+            {
+                var (partId, partName, bodyId, bodyName, faceId, faceIndex, labelCategory, labelValue, similarity, confidence, notes) = matches[i];
+                Console.WriteLine($"[{i + 1}] {partName}+{bodyName}+Face{faceIndex}");
+                Console.WriteLine($"    标注：{labelCategory} = {labelValue}");
+                Console.WriteLine($"    相似度：{similarity:F3} ({similarity * 100:F1}%)");
+                Console.WriteLine($"    置信度：{confidence:F2}");
+                if (!string.IsNullOrEmpty(notes))
+                {
+                    Console.WriteLine($"    备注：{notes}");
+                }
+                Console.WriteLine();
+            }
+
+            Console.WriteLine($"{'=',80}\n");
+        }
  
  
         [Command("findpart", Description = "查询当前零件的相似零件（基于 WL 图核相似度匹配），返回整体零件的相似度排名", Parameters = "[可选的：迭代次数，默认 1] [可选的：返回数量，默认 5]", Group = "train")]
