@@ -6,7 +6,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "share", "share\share.csproj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ctool", "ctools\ctool.csproj", "{92D53DF7-9FA4-334D-0F34-39B099ED37AF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "plugin", "plugin\plugin.csproj", "{5F4646E7-3F59-4D9A-923D-0F3E521818B2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "sw_plugin", "sw_plugin\sw_plugin.csproj", "{5F4646E7-3F59-4D9A-923D-0F3E521818B2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "cad_plugin", "cad_plugin\cad_plugin.csproj", "{006D6599-F609-4B87-9C35-026D1924AAF5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +28,10 @@ Global
 		{5F4646E7-3F59-4D9A-923D-0F3E521818B2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5F4646E7-3F59-4D9A-923D-0F3E521818B2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5F4646E7-3F59-4D9A-923D-0F3E521818B2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
