@@ -26,8 +26,15 @@ namespace tools
                 }
                 
                 // 创建新工程图
-                swApp.NewDocument(@"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates\my_a4.drwdot", 0, 0, 0);
+                   string templatePath = @"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates\my_a4.drwdot";
+                if (!File.Exists(templatePath))
+                {
+                    // 如果自定义模板不存在，使用默认模板
+                    templatePath = @"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates\gb_a4.drwdot";
+                    Console.WriteLine($"警告：未找到自定义模板 {templatePath}，使用默认模板");
+                }
                 
+                swApp.NewDocument(templatePath, 0, 0, 0);
                 swModel = (ModelDoc2)swApp.ActiveDoc;
                 if (swModel.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
                 {
@@ -75,7 +82,13 @@ namespace tools
                 string configuration = swApp.GetActiveConfigurationName(fullpath);
                 
                 var scaleRatio = (double)activeView.ScaleDecimal;
-                
+                string bomTemplatePath = @"C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\lang\chinese-simplified\bom-standard.sldbomtbt";
+                if (!File.Exists(bomTemplatePath))
+                {
+                    // 如果指定路径不存在，使用备用路径
+                    bomTemplatePath = @"E:\solidworks\SOLIDWORKS\lang\chinese-simplified\bom-standard.sldbomtbt";
+                    Console.WriteLine($"警告：未找到 BOM 模板 {bomTemplatePath}，使用备用路径");
+                }
                 BomTableAnnotation bomTable = activeView.InsertBomTable4(
                         false,                           // 使用默认锚点位置
                         0.0305 * scaleRatio,                   // X 位置（米）/ 图纸比例
@@ -83,7 +96,7 @@ namespace tools
                         (int)swBOMConfigurationAnchorType_e.swBOMConfigurationAnchor_BottomLeft,
                         (int)swBomType_e.swBomType_Indented,
                         configuration,                   // 配置名称
-                        @"C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\lang\chinese-simplified\bom-standard.sldbomtbt",
+                        bomTemplatePath,
                         false,                           // 不覆盖现有文件
                         1,                               // 行数
                         false                            // 不显示对话框
