@@ -11,7 +11,7 @@ using Autodesk.AutoCAD.EditorInput;
 using System.Windows.Forms;
  
 [ComVisible(true)]
-public class CadPluginCommands
+public partial class CadPluginCommands
 {
     [ComRegisterFunction]
     public static void RegisterFunction(Type t)
@@ -77,13 +77,6 @@ public class CadPluginCommands
         {
             MessageBox.Show($"卸载时发生错误:\n{e.Message}", "卸载错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
-    }
- 
-    [CommandMethod("HELLO")]
-    public void HelloCommand()
-    {
-        Editor ed = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Editor;
-        ed.WriteMessage("\nHello from CAD Plugin!\n");
     }
 }
 

@@ -159,13 +159,23 @@ namespace tools
         {
             try
             {
-                // 搜索当前目录和所有子目录中的 DWG 文件
+                // 搜索当前目录和所有子目录中的 DWG 文件（包括 sus、CNC 等材质文件夹）
                 string[] dwgFiles = Directory.GetFiles(directory, "*.dwg", SearchOption.AllDirectories);
                 
                 foreach (string dwgFile in dwgFiles)
                 {
                     string fileNameWithoutExt = Path.GetFileNameWithoutExtension(dwgFile);
+                    
+                    // 精确匹配（不区分大小写）
                     if (fileNameWithoutExt.Equals(partName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                    
+                    // 宽松匹配：去除空格、连字符等特殊字符后比较
+                    string cleanPartName = partName.Replace(" ", "").Replace("-", "").Replace("_", "");
+                    string cleanFileName = fileNameWithoutExt.Replace(" ", "").Replace("-", "").Replace("_", "");
+                    if (cleanFileName.Equals(cleanPartName, StringComparison.OrdinalIgnoreCase))
                     {
                         return true;
                     }

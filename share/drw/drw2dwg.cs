@@ -23,16 +23,17 @@ namespace tools
             
           
          
-           
+            Debug.WriteLine($"正在转换Drw为DWG。{fullpath}");
             // 设置自定义映射文件
             if (swApp != null)
             {
                 string pluginDir = Path.GetDirectoryName(typeof(drw2dwg).Assembly.Location);
               
-                string mapFilePath = Path.Combine(@"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates", "dwgmaping");
+                string mapFilePath = Path.Combine(@"C:\Users\Administrator\", "dwgmaping");
               
                 if (File.Exists(mapFilePath))
                 {
+                    Debug.WriteLine($"已设置自定义映射文件。{mapFilePath}");
                     swApp.SetUserPreferenceStringListValue(
                         (int)swUserPreferenceStringListValue_e.swDxfMappingFiles, 
                         mapFilePath);
@@ -49,7 +50,7 @@ namespace tools
                 }
                 else
                 {
-                    Console.WriteLine($"错误：无法找到自定义映射文件。{mapFilePath}");
+                    Debug.WriteLine($"错误：无法找到自定义映射文件。{mapFilePath}");
 
                 }
             }
@@ -89,7 +90,14 @@ namespace tools
                 {
                     swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
                     swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
-                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString();
+                    var meterialDB = "";
+                    string meterial=((PartDoc)partDoc).GetMaterialPropertyName( out meterialDB);
+                    
+                    var meterialthick = thickness.ToString();
+                    Debug.WriteLine("meterial:"+meterial);
+                    if (meterial.ToLower().Contains("sus"))meterialthick="sus"+ thickness.ToString() ;
+                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" +meterialthick;
+                    
                 }
             }
             

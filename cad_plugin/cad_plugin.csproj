@@ -38,5 +38,9 @@
         <CopyLocal>True</CopyLocal>
       </Reference>
     </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\share\share.csproj" />
+    </ItemGroup>
  
 </Project>

@@ -292,6 +292,37 @@ using System.Linq;
         }
     }
 
+    [Command(1010, "检查K因子", "检查当前零件的K因子设置是否正确", "checkkfactor", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
+    private void CheckKFactor()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个零件文档");
+                return;
+            }
+            
+            checkk_factor.run(swApp, swModel);
+            
+            Debug.WriteLine("K因子检查完成");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"K因子检查失败：{ex.Message}");
+            swApp?.SendMsgToUser($"K因子检查失败：{ex.Message}");
+        }
+    }
+
      [Command(1008, "装配体导出 BOM", "生成装配体 BOM 表并导出为 Excel", "asm2bom", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private async void Asm2bom()
     {

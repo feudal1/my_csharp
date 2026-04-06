@@ -29,8 +29,8 @@ static public void run()
         foreach (AcadDimStyle dimStyle in dimStyles)
         {
             string oldName = dimStyle.Name;
-            string uuid4 = Guid.NewGuid().ToString();
-            string newName = $"{oldName}_{uuid4}";
+          
+            string newName = $"{oldName}_{ acadDoc.Name}";
             
             try
             {
