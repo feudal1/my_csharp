@@ -65,12 +65,7 @@ namespace tools
             draw_divider.process_subfolders_with_divider();
 
         }
-                [Command("mergedwg2", Description = "遍历（子）文件夹：合并 DWG 并绘制边界框", Parameters = "无", Group = "cad")]
-        static void FolderWithSubfoldersDrawDividerCommand2(string[] args)
-        {
-            draw_divider_not_dim.process_subfolders_with_divider();
-
-        }
+             
          [Command("get_all_dim_style", Description = "获取所有标注样式并添加 UUID4 后缀", Parameters = "无", Group = "cad")]
         static void GetAllDimStyleCommand(string[] args)
         {

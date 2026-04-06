@@ -1,94 +1,110 @@
 ﻿namespace cad_plugin;
-
+ 
 using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
-
-public class Class1
+using System.Windows.Forms;
+ 
+[ComVisible(true)]
+public class CadPluginCommands
 {
     [ComRegisterFunction]
     public static void RegisterFunction(Type t)
     {
-        try
-        {
-            // 动态获取当前 AutoCAD 版本信息
-            string acadVersion = Application.Version.ToString();
-            
-            Microsoft.Win32.RegistryKey localMachine = Microsoft.Win32.Registry.LocalMachine;
-            // 遍历注册表找到正确的产品代码
-            string baseKey = $"SOFTWARE\\Autodesk\\AutoCAD\\{acadVersion}";
-            Microsoft.Win32.RegistryKey versionKey = localMachine.OpenSubKey(baseKey);
-            
-            if (versionKey != null)
-            {
-                foreach (string subKeyName in versionKey.GetSubKeyNames())
-                {
-                    // 通常产品代码是类似 ACAD-xxxx:xxx 的格式
-                    if (subKeyName.StartsWith("ACAD-"))
-                    {
-                        string registryPath = $"{baseKey}\\{subKeyName}\\Applications\\mycad";
-                        Microsoft.Win32.RegistryKey myProgram = localMachine.CreateSubKey(registryPath, true);
-                        myProgram.SetValue("DESCRIPTION", "cad插件", Microsoft.Win32.RegistryValueKind.String);
-                        myProgram.SetValue("LOADCTRLS", 2, Microsoft.Win32.RegistryValueKind.DWord);
-                        myProgram.SetValue("LOADER", Assembly.GetExecutingAssembly().Location, Microsoft.Win32.RegistryValueKind.String);
-                        myProgram.SetValue("MANAGED", 1, Microsoft.Win32.RegistryValueKind.DWord);
-                        break; // 找到第一个匹配的就退出
-                    }
-                }
-            }
-        }
-        catch (NullReferenceException nl)
-        {
-            Console.WriteLine("There was a problem registering this dll: SWattr is null. \n\"" + nl.Message + "\"");
-            Console.WriteLine("There was a problem registering this dll: SWattr is null.\n\"" + nl.Message + "\"");
-        }
-        catch (System.Exception e)
-        {
-            Console.WriteLine(e.Message);
-            Console.WriteLine("There was a problem registering the function: \n\"" + e.Message + "\"");
-        }
+        // 注意：此方法在 regasm 注册时会被调用，此时 AutoCAD 未运行
+        // 所以不能使用 Autodesk.AutoCAD.ApplicationServices.Application
+        // 注册逻辑已移至 register.bat 脚本中直接操作注册表
     }
-
+ 
     [ComUnregisterFunction]
     public static void UnregisterFunction(Type t)
     {
         try
         {
-            // 动态获取当前 AutoCAD 版本信息
-            string acadVersion = Application.Version.ToString();
+            Microsoft.Win32.RegistryKey localMachine = Microsoft.Win32.Registry.LocalMachine;
+            string baseKey = "SOFTWARE\\Autodesk\\AutoCAD";
+            Microsoft.Win32.RegistryKey acadKey = localMachine.OpenSubKey(baseKey);
             
-            Microsoft.Win32.RegistryKey hklm = Microsoft.Win32.Registry.LocalMachine;
-            // 遍历注册表找到正确的产品代码
-            string baseKey = $"SOFTWARE\\Autodesk\\AutoCAD\\{acadVersion}";
-            Microsoft.Win32.RegistryKey versionKey = hklm.OpenSubKey(baseKey);
-            
-            if (versionKey != null)
+            if (acadKey == null)
             {
-                foreach (string subKeyName in versionKey.GetSubKeyNames())
-                {
-                    // 通常产品代码是类似 ACAD-xxxx:xxx 的格式
-                    if (subKeyName.StartsWith("ACAD-"))
-                    {
-                        string keyname = $"{baseKey}\\{subKeyName}\\Applications\\mycad";
-                        hklm.DeleteSubKey(keyname, false); // false 表示如果子键不存在不抛出异常
-                        break; // 找到第一个匹配的就退出
-                    }
-                }
+                MessageBox.Show("未找到 AutoCAD 注册表路径", "卸载提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
-        }
-        catch (NullReferenceException nl)
-        {
-            Console.WriteLine("There was a problem unregistering this dll: " + nl.Message);
-            Console.WriteLine("There was a problem unregistering this dll: \n\"" + nl.Message + "\"");
+            
+            // 遍历所有版本查找并删除插件注册
+            bool found = false;
+            foreach (string version in acadKey.GetSubKeyNames())
+            {
+                string versionPath = $"{baseKey}\\{version}";
+                Microsoft.Win32.RegistryKey versionKey = localMachine.OpenSubKey(versionPath);
+                
+                if (versionKey != null)
+                {
+                    foreach (string product in versionKey.GetSubKeyNames())
+                    {
+                        if (product.StartsWith("ACAD-"))
+                        {
+                            string keyname = $"{versionPath}\\{product}\\Applications\\mycad";
+                            try
+                            {
+                                localMachine.DeleteSubKey(keyname, false);
+                                found = true;
+                                MessageBox.Show($"插件卸载成功!\n\n删除路径: {keyname}", "卸载成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            }
+                            catch { }
+                            break;
+                        }
+                    }
+                    versionKey.Close();
+                }
+                
+                if (found) break;
+            }
+            
+            if (!found)
+            {
+                MessageBox.Show("未找到需要卸载的插件注册项", "卸载提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            
+            acadKey.Close();
         }
         catch (System.Exception e)
         {
-            Console.WriteLine("There was a problem unregistering this dll: " + e.Message);
-            Console.WriteLine("There was a problem unregistering this dll: \n\"" + e.Message + "\"");
+            MessageBox.Show($"卸载时发生错误:\n{e.Message}", "卸载错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+ 
+    [CommandMethod("HELLO")]
+    public void HelloCommand()
+    {
+        Editor ed = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Editor;
+        ed.WriteMessage("\nHello from CAD Plugin!\n");
+    }
+}
+
+// 实现 IExtensionApplication 接口，在插件加载时自动初始化
+public class PluginInitializer : IExtensionApplication
+{
+    public void Initialize()
+    {
+        // 插件加载时自动执行的初始化代码
+        Editor ed = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument?.Editor;
+        if (ed != null)
+        {
+            ed.WriteMessage("\n========================================\n");
+            ed.WriteMessage("CAD 插件已成功加载!\n");
+            ed.WriteMessage("可用命令: HELLO\n");
+            ed.WriteMessage("========================================\n");
+        }
+    }
+
+    public void Terminate()
+    {
+        // 插件卸载时的清理代码
     }
 }
