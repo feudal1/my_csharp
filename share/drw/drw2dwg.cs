@@ -38,15 +38,7 @@ namespace tools
                         (int)swUserPreferenceStringListValue_e.swDxfMappingFiles, 
                         mapFilePath);
                     
-                    int index = swApp.GetUserPreferenceIntegerValue(
-                        (int)swUserPreferenceIntegerValue_e.swDxfMappingFileIndex);
-                    
-                    if (index == -1)
-                    {
-                        var set_result=swApp.SetUserPreferenceIntegerValue(
-                            (int)swUserPreferenceIntegerValue_e.swDxfMappingFileIndex, 
-                            0);
-                    }
+                  
                 }
                 else
                 {

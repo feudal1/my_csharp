@@ -48,8 +48,8 @@ namespace tools
                     bomType, 
                     Configuration, 
                     true, 
-                    0, 
-                    false
+                   (int)swNumberingType_e.swNumberingType_None, 
+                    true
                 );
 
                 if (swBOMAnnotation == null)
@@ -95,20 +95,19 @@ namespace tools
                     // 获取所有 body 及其标签，格式：bodyName1,label1;bodyName2,label2
                     string labelsString = database!.GetLabelsByPartName(partname);
                                         
-                    if (string.IsNullOrEmpty(labelsString))
-                    {
+                 
                         if (dwgExists)
                         {
-                            swTableAnnotation.set_Text(i, 3, "已出图");
+                            swTableAnnotation.set_Text(i, 4, "已出图");
                         }
-                        else
-                        {
-                            swTableAnnotation.set_Text(i, 3, "");
-                        }
-                        
+                      
+                 
+                                         // 检查 labelsString 是否有效
+                    if (string.IsNullOrEmpty(labelsString))
+                    {
+                        Debug.WriteLine($"警告：零件 '{partname}' 没有找到拓扑标注信息。");
                         continue;
-                    }
-                                        
+                    }     
                     // 分割每个 body 的标注（用分号分隔）
                     string[] bodyLabelPairs = labelsString.Split(';');
                     
@@ -118,8 +117,8 @@ namespace tools
                         string firstPair = bodyLabelPairs[0];
                         string[] parts = firstPair.Split(',');
                         string bodyName = parts[0];
-                       string label = parts[1];
-                        swTableAnnotation.set_Text(i, 3, dwgExists ? "已出图" : label);
+                       string label =  parts[1];
+                        swTableAnnotation.set_Text(i, 3,  label);
                     
                     }
                   
