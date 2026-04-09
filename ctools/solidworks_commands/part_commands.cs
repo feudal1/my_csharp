@@ -27,14 +27,7 @@ namespace tools
         }
 
         
-        [Command("get_select_type", Description = "导出当前零件展开为 DWG 文件", Parameters = "无", Group = "solidworks")]
-        static void Get_select_type(string[] args)
-        {
-            if (swApp == null || swModel == null) return;
-
-            open_select_dwg.run(swModel);
-
-        }
+   
         [Command("export_flat_view", Description = "导出钣金展开视图 dwg", Parameters = "无", Group = "solidworks")]
         static void ExportFlatViewCommand(string[] args)
         {
