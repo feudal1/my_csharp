@@ -52,9 +52,7 @@ namespace tools
                swModel.SetUserPreferenceToggle((int)swUserPreferenceToggle_e.swDisplaySketches, false);
               // swModel.Extension.SelectByID2(view1.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
             
-              var view4 = drawingDoc.CreateFlatPatternViewFromModelView3( partdoc.GetPathName(), "",0.20, 0.15, 0,false,false);
-        
-               
+          
           
                swModel.EditRebuild3();
               swModel.SaveAs3(drwpath, 0, 0);

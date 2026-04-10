@@ -78,6 +78,42 @@ namespace SolidWorksAddinStudy
             Console.WriteLine(body.Name);
             return (swModel, body);
        }
+
+       public string export_flat_pattern()
+       {
+           ShowOutputWindow();
+           try
+           {
+               Debug.WriteLine("开始导出展开");
+               if (swApp == null)
+               {
+                   Debug.WriteLine("SolidWorks 未初始化");
+                   return "SolidWorks 未初始化";
+               }
+
+ var acswModel = (ModelDoc2)swApp.ActiveDoc;
+                  var (swModel, body) = get_select_body(acswModel);
+               if (swModel == null)
+               {
+                   Debug.WriteLine("没有打开的文档");
+                   swApp.SendMsgToUser("请先打开一个零件文档");
+                   return "没有打开的文档";
+               }
+               
+               checkk_factor.run(swApp, swModel);
+               exportdwg2_body.run(swModel);
+               
+               Debug.WriteLine("展开导出完成");
+               return "展开导出完成";
+           }
+           catch (Exception ex)
+           {
+               Debug.WriteLine($"导出展开失败：{ex.Message}");
+               swApp?.SendMsgToUser($"导出展开失败：{ex.Message}");
+               return $"导出展开失败：{ex.Message}";
+           }
+       }
+
         /// <summary>
         /// 初始化实体右键菜单
         /// </summary>
@@ -92,13 +128,15 @@ namespace SolidWorksAddinStudy
                 }
 
                 
-                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID,	(int)swSelectType_e.swSelFACES,"open_dwg", "open_dwg", "","","");
+         
+  
+                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "export_dwg", "export_flat_pattern", "", "", "");
+                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "export_dwg", "export_flat_pattern", "", "", "");
+                            swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "new_drw", "new_drawing_from_part", "", "", "");
+                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "new_drw", "new_drawing_from_part", "", "", "");
+                   swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID,	(int)swSelectType_e.swSelFACES,"open_dwg", "open_dwg", "","","");
                  swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID,	(int)swSelectType_e.swSelFACES,"open_dwg", "open_dwg", "","","");
-                 
-                
-                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "new_drawing_from_part", "new_drawing_from_part", "", "", "");
-                 
-              
+                      
             }
             catch (Exception ex)
             {
