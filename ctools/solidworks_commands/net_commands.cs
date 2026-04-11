@@ -651,5 +651,25 @@ namespace tools
             Console.WriteLine($"✓ 零件 '{partName}' 的标注信息:");
             Console.WriteLine($"\n{labelsString}\n");
         }
+
+        // ========== LLM 标注验证相关命令 ==========
+
+        /// <summary>
+        /// 使用 LLM 验证单个标注是否正确
+        /// </summary>
+        [Command("validate_label", Description = "使用 LLM 验证单个标注是否正确。用法：validate_label [零件名称] [标注值] [图纸信息(可选)] - AI 会分析零件名称和标注值是否匹配。示例：validate_label 连接板 结构件、validate_label 法兰盘 管件 圆形法兰带螺栓孔", Parameters = "[零件名称] [标注值] [图纸信息(可选)]", Group = "train")]
+        static async Task ValidateLabel(string[] args)
+        {
+            await LabelValidator.ValidateLabelTool(args);
+        }
+
+        /// <summary>
+        /// 批量验证当前零件的所有标注
+        /// </summary>
+        [Command("validate_all_labels", Description = "批量验证当前零件的所有标注。用法：validate_all_labels - 自动遍历当前零件的所有 body 标注，逐个调用 LLM 验证是否正确", Parameters = "无", Group = "train")]
+        static async Task ValidateAllLabels(string[] args)
+        {
+            await LabelValidator.ValidateAllLabelsTool(args);
+        }
     }
 }
