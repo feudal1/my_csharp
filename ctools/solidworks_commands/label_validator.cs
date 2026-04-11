@@ -22,22 +22,51 @@ namespace tools
         }
 
         /// <summary>
-        /// 核心方法：根据零件名称和图纸信息，让 AI 判断标注是否正确
+        /// 核心方法：根据零件的 WL 拓扑图特征和标注值，让 AI 判断标注是否正确
         /// </summary>
         /// <param name="partName">零件名称</param>
         /// <param name="labelValue">标注值</param>
+        /// <param name="wlFrequencies">WL 频率数据（最后一轮迭代）</param>
         /// <param name="drawingInfo">图纸信息（可选）</param>
         /// <returns>true 表示标注正确，false 表示标注错误</returns>
-        public async Task<bool> ValidateLabelAsync(string partName, string labelValue, string? drawingInfo = null)
+        public async Task<bool> ValidateLabelAsync(string partName, string labelValue, List<Dictionary<string, int>> wlFrequencies, string? drawingInfo = null)
         {
             try
             {
+                // 使用 WL 特征查找数据库中相似的标注
+                var database = TopologyLabeler.GetDatabase();
+                if (database == null)
+                {
+                    Console.WriteLine("[警告] 数据库未初始化，仅基于零件名称验证");
+                    return await ValidateByLLMOnly(partName, labelValue, drawingInfo);
+                }
+                
+                // 调用现有的 WL 匹配方法查找相似标注
+                var similarBodies = database.FindBodiesByWLTags(wlFrequencies, topK: 5, minSimilarity: 0.3);
+                
                 // 构建验证 prompt
                 var promptBuilder = new StringBuilder();
                 promptBuilder.AppendLine("请作为专业的 CAD 工程师，帮我判断以下零件的标注是否正确。");
                 promptBuilder.AppendLine("\n=== 零件信息 ===");
                 promptBuilder.AppendLine($"零件名称：{partName}");
-                promptBuilder.AppendLine($"标注值：{labelValue}");
+                promptBuilder.AppendLine($"待验证标注值：{labelValue}");
+                
+                if (similarBodies.Count > 0)
+                {
+                    promptBuilder.AppendLine("\n=== 数据库中相似的已标注零件（基于 WL 拓扑特征匹配）===");
+                    for (int i = 0; i < Math.Min(similarBodies.Count, 5); i++)
+                    {
+                        var (partId, simPartName, bodyId, bodyName, category, simLabelValue, similarity, confidence, notes) = similarBodies[i];
+                        promptBuilder.AppendLine($"{i + 1}. {simPartName}+{bodyName}");
+                        promptBuilder.AppendLine($"   标注：{category} = {simLabelValue}");
+                        promptBuilder.AppendLine($"   相似度：{similarity:F3} ({similarity * 100:F1}%)");
+                        promptBuilder.AppendLine($"   置信度：{confidence:F2}");
+                    }
+                }
+                else
+                {
+                    promptBuilder.AppendLine("\n=== 数据库中没有找到相似的已标注零件 ===");
+                }
                 
                 if (!string.IsNullOrEmpty(drawingInfo))
                 {
@@ -45,16 +74,18 @@ namespace tools
                 }
                 
                 promptBuilder.AppendLine("\n=== 判断要求 ===");
-                promptBuilder.AppendLine("1. 分析零件名称和图纸特征");
-                promptBuilder.AppendLine("2. 判断该标注值是否符合零件的实际类型");
-                promptBuilder.AppendLine("3. 只返回 'true' 或 'false'，不要有其他内容");
-                promptBuilder.AppendLine("4. true 表示标注正确，false 表示标注错误");
+                promptBuilder.AppendLine("1. 分析零件名称、WL 拓扑特征匹配的相似零件标注");
+                promptBuilder.AppendLine("2. 对比待验证标注与相似零件的标注是否一致或合理");
+                promptBuilder.AppendLine("3. 如果相似零件都标注为同一类型，而待验证标注不同，则可能错误");
+                promptBuilder.AppendLine("4. 只返回 'true' 或 'false'，不要有其他内容");
+                promptBuilder.AppendLine("5. true 表示标注正确，false 表示标注错误");
                 
                 string prompt = promptBuilder.ToString();
                 
                 Console.WriteLine($"\n[调试] 正在请求 LLM 验证标注...");
                 Console.WriteLine($"[调试] 零件名称：{partName}");
                 Console.WriteLine($"[调试] 标注值：{labelValue}");
+                Console.WriteLine($"[调试] 找到 {similarBodies.Count} 个相似零件");
                 
                 // 调用 LLM
                 string response = await _llmService.ChatAsync(prompt);
@@ -73,6 +104,33 @@ namespace tools
                 // 发生异常时返回 false，表示无法验证
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 仅基于 LLM 验证（不使用 WL 特征）
+        /// </summary>
+        private async Task<bool> ValidateByLLMOnly(string partName, string labelValue, string? drawingInfo = null)
+        {
+            var promptBuilder = new StringBuilder();
+            promptBuilder.AppendLine("请作为专业的 CAD 工程师，帮我判断以下零件的标注是否正确。");
+            promptBuilder.AppendLine("\n=== 零件信息 ===");
+            promptBuilder.AppendLine($"零件名称：{partName}");
+            promptBuilder.AppendLine($"标注值：{labelValue}");
+            
+            if (!string.IsNullOrEmpty(drawingInfo))
+            {
+                promptBuilder.AppendLine($"\n=== 图纸信息 ===\n{drawingInfo}");
+            }
+            
+            promptBuilder.AppendLine("\n=== 判断要求 ===");
+            promptBuilder.AppendLine("1. 分析零件名称和图纸特征");
+            promptBuilder.AppendLine("2. 判断该标注值是否符合零件的实际类型");
+            promptBuilder.AppendLine("3. 只返回 'true' 或 'false'，不要有其他内容");
+            promptBuilder.AppendLine("4. true 表示标注正确，false 表示标注错误");
+            
+            string prompt = promptBuilder.ToString();
+            string response = await _llmService.ChatAsync(prompt);
+            return ParseBoolResponse(response);
         }
 
         /// <summary>
@@ -192,8 +250,41 @@ namespace tools
                     Console.WriteLine($"图纸信息：{drawingInfo}");
                 }
                 
+                // 获取当前零件的 WL 拓扑图特征
+                Console.WriteLine("\n[调试] 正在计算 WL 拓扑图特征...");
+                var graphs = FaceGraphBuilder.BuildGraphs(Program.SwModel);
+                if (graphs.Count == 0)
+                {
+                    Console.WriteLine("无法构建拓扑图");
+                    return;
+                }
+                
+                // 合并所有 Body 的 WL 频率
+                var combinedFrequencies = new List<Dictionary<string, int>>();
+                foreach (var graph in graphs)
+                {
+                    var wlFreq = WLGraphKernel.PerformWLIterations(graph, 1);
+                    if (combinedFrequencies.Count == 0)
+                    {
+                        combinedFrequencies = wlFreq;
+                    }
+                    else
+                    {
+                        for (int i = 0; i < wlFreq.Count; i++)
+                        {
+                            foreach (var kvp in wlFreq[i])
+                            {
+                                if (!combinedFrequencies[i].ContainsKey(kvp.Key))
+                                    combinedFrequencies[i][kvp.Key] = 0;
+                                combinedFrequencies[i][kvp.Key] += kvp.Value;
+                            }
+                        }
+                    }
+                }
+                Console.WriteLine($"[调试] WL 特征计算完成（{combinedFrequencies.Count} 轮迭代）");
+                
                 var validator = new LabelValidator();
-                bool isValid = await validator.ValidateLabelAsync(partName, labelValue, drawingInfo);
+                bool isValid = await validator.ValidateLabelAsync(partName, labelValue, combinedFrequencies, drawingInfo);
                 
                 Console.WriteLine($"\n{'=',60}");
                 Console.WriteLine($"验证结果：{(isValid ? "✓ 标注正确" : "✗ 标注错误")}");
@@ -240,6 +331,16 @@ namespace tools
                 string partName = Program.SwModel.GetTitle();
                 string fullPath = Program.SwModel.GetPathName();
                 
+                // 构建当前零件的拓扑图
+                Console.WriteLine("[调试] 正在构建拓扑图...");
+                var graphs = FaceGraphBuilder.BuildGraphs(Program.SwModel);
+                if (graphs.Count == 0)
+                {
+                    Console.WriteLine("无法构建拓扑图");
+                    return;
+                }
+                Console.WriteLine($"[调试] 构建了 {graphs.Count} 个 Body 的拓扑图");
+                
                 // 获取该零件的所有 body 标注
                 var allBodies = database.GetAllBodiesWithLabels();
                 var partBodies = allBodies.Where(b => b.PartName == partName).ToList();
@@ -271,8 +372,16 @@ namespace tools
                     Console.WriteLine($"\n验证 Body: {bodyName}");
                     Console.WriteLine($"  标注：{category} = {labelValue}");
                     
+                    // 获取该 Body 的 WL 特征
+                    var bodyGraph = graphs.FirstOrDefault(g => g.FullBodyName == bodyName);
+                    List<Dictionary<string, int>> bodyWLFreq = new List<Dictionary<string, int>>();
+                    if (bodyGraph != null)
+                    {
+                        bodyWLFreq = WLGraphKernel.PerformWLIterations(bodyGraph, 1);
+                    }
+                    
                     // 调用 LLM 验证
-                    bool isValid = await validator.ValidateLabelAsync(bodyName, labelValue);
+                    bool isValid = await validator.ValidateLabelAsync(bodyName, labelValue, bodyWLFreq);
                     
                     if (isValid)
                     {
