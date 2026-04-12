@@ -222,98 +222,26 @@ namespace tools
         }
 
         /// <summary>
-        /// 通过 Tool 方式验证当前零件的标注
-        /// 这是一个可以被 LLM 调用的工具方法
-        /// </summary>
-        /// <param name="args">参数数组，包含：[零件名称, 标注值, 图纸信息(可选)]</param>
-        public static async Task ValidateLabelTool(string[] args)
-        {
-            try
-            {
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("用法：validate_label [零件名称] [标注值] [图纸信息(可选)]");
-                    Console.WriteLine("示例：validate_label 连接板 结构件");
-                    Console.WriteLine("示例：validate_label 法兰盘 管件 圆形法兰，带螺栓孔");
-                    return;
-                }
-                
-                string partName = args[0];
-                string labelValue = args[1];
-                string? drawingInfo = args.Length > 2 ? args[2] : null;
-                
-                Console.WriteLine($"\n=== LLM 标注验证 ===");
-                Console.WriteLine($"零件名称：{partName}");
-                Console.WriteLine($"标注值：{labelValue}");
-                if (!string.IsNullOrEmpty(drawingInfo))
-                {
-                    Console.WriteLine($"图纸信息：{drawingInfo}");
-                }
-                
-                // 获取当前零件的 WL 拓扑图特征
-                Console.WriteLine("\n[调试] 正在计算 WL 拓扑图特征...");
-                var graphs = FaceGraphBuilder.BuildGraphs(Program.SwModel);
-                if (graphs.Count == 0)
-                {
-                    Console.WriteLine("无法构建拓扑图");
-                    return;
-                }
-                
-                // 合并所有 Body 的 WL 频率
-                var combinedFrequencies = new List<Dictionary<string, int>>();
-                foreach (var graph in graphs)
-                {
-                    var wlFreq = WLGraphKernel.PerformWLIterations(graph, 1);
-                    if (combinedFrequencies.Count == 0)
-                    {
-                        combinedFrequencies = wlFreq;
-                    }
-                    else
-                    {
-                        for (int i = 0; i < wlFreq.Count; i++)
-                        {
-                            foreach (var kvp in wlFreq[i])
-                            {
-                                if (!combinedFrequencies[i].ContainsKey(kvp.Key))
-                                    combinedFrequencies[i][kvp.Key] = 0;
-                                combinedFrequencies[i][kvp.Key] += kvp.Value;
-                            }
-                        }
-                    }
-                }
-                Console.WriteLine($"[调试] WL 特征计算完成（{combinedFrequencies.Count} 轮迭代）");
-                
-                var validator = new LabelValidator();
-                bool isValid = await validator.ValidateLabelAsync(partName, labelValue, combinedFrequencies, drawingInfo);
-                
-                Console.WriteLine($"\n{'=',60}");
-                Console.WriteLine($"验证结果：{(isValid ? "✓ 标注正确" : "✗ 标注错误")}");
-                Console.WriteLine($"{'=',60}\n");
-                
-                if (!isValid)
-                {
-                    Console.WriteLine("建议：");
-                    Console.WriteLine("1. 检查零件名称是否准确");
-                    Console.WriteLine("2. 查看图纸确认零件实际类型");
-                    Console.WriteLine("3. 参考历史标注数据重新标注");
-                    Console.WriteLine();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"\n[错误] 验证过程出错：{ex.Message}");
-                Console.WriteLine(ex.StackTrace);
-            }
-        }
-
-        /// <summary>
         /// 批量验证当前零件的所有标注
         /// </summary>
         public static async Task ValidateAllLabelsTool(string[] args)
         {
             try
             {
-                if (Program.SwModel == null)
+                // 尝试从多个来源获取模型
+                ModelDoc2? model = Program.SwModel;
+                
+                Console.WriteLine($"[调试] Program.SwModel: {(model != null ? model.GetTitle() : "null")}");
+                Console.WriteLine($"[调试] SwContext.Instance.SwModel: {(SwContext.Instance.SwModel != null ? SwContext.Instance.SwModel.GetTitle() : "null")}");
+                
+                // 如果 Program.SwModel 为 null，尝试从 SwContext 获取
+                if (model == null)
+                {
+                    model = SwContext.Instance.SwModel;
+                    Console.WriteLine("[调试] 使用 SwContext 中的模型");
+                }
+                
+                if (model == null)
                 {
                     Console.WriteLine("错误：请先打开一个零件文档");
                     return;
@@ -328,12 +256,12 @@ namespace tools
                     return;
                 }
                 
-                string partName = Program.SwModel.GetTitle();
-                string fullPath = Program.SwModel.GetPathName();
+                string partName = model.GetTitle();
+                string fullPath = model.GetPathName();
                 
                 // 构建当前零件的拓扑图
                 Console.WriteLine("[调试] 正在构建拓扑图...");
-                var graphs = FaceGraphBuilder.BuildGraphs(Program.SwModel);
+                var graphs = FaceGraphBuilder.BuildGraphs(model);
                 if (graphs.Count == 0)
                 {
                     Console.WriteLine("无法构建拓扑图");
@@ -341,46 +269,45 @@ namespace tools
                 }
                 Console.WriteLine($"[调试] 构建了 {graphs.Count} 个 Body 的拓扑图");
                 
-                // 获取该零件的所有 body 标注
-                var allBodies = database.GetAllBodiesWithLabels();
-                var partBodies = allBodies.Where(b => b.PartName == partName).ToList();
-                
-                if (partBodies.Count == 0)
-                {
-                    Console.WriteLine($"零件 '{partName}' 没有标注记录");
-                    return;
-                }
-                
                 var validator = new LabelValidator();
                 int correctCount = 0;
                 int incorrectCount = 0;
                 int skippedCount = 0;
                 
-                foreach (var (partId, pName, bodyId, bodyName, labels) in partBodies)
+                // 遍历每个 Body，使用 WL 特征查找相似零件进行验证
+                foreach (var graph in graphs)
                 {
-                    if (labels.Count == 0)
+                    string bodyName = graph.FullBodyName;
+                    Console.WriteLine($"\n验证 Body: {bodyName}");
+                    
+                    // 计算该 Body 的 WL 特征
+                    var bodyWLFreq = WLGraphKernel.PerformWLIterations(graph, 1);
+                    
+                    // 使用 WL 特征在数据库中查找相似度最高的已标注零件
+                    Console.WriteLine("[调试] 正在查找相似零件...");
+                    var similarBodies = database.FindBodiesByWLTags(bodyWLFreq, topK: 5, minSimilarity: 0.3);
+                    
+                    if (similarBodies.Count == 0)
                     {
+                        Console.WriteLine("  [跳过] 未找到相似的已标注零件");
                         skippedCount++;
                         continue;
                     }
                     
-                    // 取第一个标注进行验证（通常只有一个标注类别）
-                    var firstLabel = labels.First();
-                    string category = firstLabel.Key;
-                    string labelValue = firstLabel.Value;
-                    
-                    Console.WriteLine($"\n验证 Body: {bodyName}");
-                    Console.WriteLine($"  标注：{category} = {labelValue}");
-                    
-                    // 获取该 Body 的 WL 特征
-                    var bodyGraph = graphs.FirstOrDefault(g => g.FullBodyName == bodyName);
-                    List<Dictionary<string, int>> bodyWLFreq = new List<Dictionary<string, int>>();
-                    if (bodyGraph != null)
+                    Console.WriteLine($"  找到 {similarBodies.Count} 个相似零件：");
+                    foreach (var (simPartId, simPartName, simBodyId, simBodyName, simCategory, simLabelValue, similarity, confidence, notes) in similarBodies.Take(3))
                     {
-                        bodyWLFreq = WLGraphKernel.PerformWLIterations(bodyGraph, 1);
+                        Console.WriteLine($"    - {simPartName}+{simBodyName}: {simCategory}={simLabelValue} (相似度: {similarity:F3})");
                     }
                     
-                    // 调用 LLM 验证
+                    // 取第一个相似零件的标注值作为待验证的标注
+                    var firstSimilar = similarBodies.First();
+                    string category = firstSimilar.Item5;  // LabelCategory
+                    string labelValue = firstSimilar.Item6;  // LabelValue
+                    
+                    Console.WriteLine($"  待验证标注：{category} = {labelValue}");
+                    
+                    // 调用 LLM 验证（传入 WL 特征和相似零件信息）
                     bool isValid = await validator.ValidateLabelAsync(bodyName, labelValue, bodyWLFreq);
                     
                     if (isValid)

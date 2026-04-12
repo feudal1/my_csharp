@@ -22,9 +22,13 @@ namespace tools
         private readonly CommandExecutor _commandExecutor;
         private StringWriter? _consoleOutputCapture;
         private TextWriter _originalConsoleOutput = null!;
+        private readonly string _lastCommandFile;  // 本地记录文件路径
     
      
         private bool _requireConfirmation = true;
+        
+        // 记录最后执行的命令（从文件加载）
+        private static string? _lastCommand = LoadLastCommandFromFile();
         
         // 特殊命令列表
         private readonly List<(string Name, string Description)> _specialCommands = new List<(string, string)> 
@@ -33,7 +37,8 @@ namespace tools
             ("exit", "退出交互式循环模式"),
             ("clear", "清空对话历史"),
             ("mode", "切换命令执行模式（确认/自动）"),
-            ("history", "查看对话历史")
+            ("history", "查看对话历史"),
+            ("last", "重复执行上一次执行的命令")
         };
 
         public LlmLoopCaller(
@@ -49,8 +54,61 @@ namespace tools
             _consoleOutputCapture = new StringWriter();
             _originalConsoleOutput = Console.Out;
             
+            // 初始化本地记录文件路径
+            string llmDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm");
+            if (!Directory.Exists(llmDir))
+            {
+                Directory.CreateDirectory(llmDir);
+            }
+            _lastCommandFile = Path.Combine(llmDir, "last_command.txt");
+            
             // 重定向 Console 输出（不再写入 runlog）
             Console.SetOut(_originalConsoleOutput);
+        }
+
+        /// <summary>
+        /// 从文件加载最后执行的命令
+        /// </summary>
+        private static string? LoadLastCommandFromFile()
+        {
+            try
+            {
+                string llmDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm");
+                string filePath = Path.Combine(llmDir, "last_command.txt");
+                
+                if (File.Exists(filePath))
+                {
+                    return File.ReadAllText(filePath, Encoding.UTF8).Trim();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[警告] 加载 last_command.txt 失败：{ex.Message}");
+            }
+            
+            return null;
+        }
+
+        /// <summary>
+        /// 保存最后执行的命令到文件
+        /// </summary>
+        private static void SaveLastCommandToFile(string command)
+        {
+            try
+            {
+                string llmDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm");
+                if (!Directory.Exists(llmDir))
+                {
+                    Directory.CreateDirectory(llmDir);
+                }
+                
+                string filePath = Path.Combine(llmDir, "last_command.txt");
+                File.WriteAllText(filePath, command, Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[警告] 保存 last_command.txt 失败：{ex.Message}");
+            }
         }
 
         /// <summary>
@@ -199,6 +257,10 @@ namespace tools
                         Console.WriteLine("[捕获的输出]:");
                         Console.Write(capturedOutput);
                     }
+                    
+                    // 记录最后执行的命令（内存 + 文件）
+                    _lastCommand = fullCommand;
+                    SaveLastCommandToFile(fullCommand);
                     
                     return (result, capturedOutput);
                 }
@@ -474,6 +536,20 @@ namespace tools
                     continue;
                 }
                 
+                if (input.ToLower() == "last")
+                {
+                    if (string.IsNullOrEmpty(_lastCommand))
+                    {
+                        Console.WriteLine("\n还没有执行过任何命令喵~");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"\n>>> 重复执行上一次命令：{_lastCommand}");
+                        input = _lastCommand;  // 将 input 设置为上一次的命令，继续后续处理
+                    }
+                    continue;
+                }
+                
                 if (input.ToLower() == "llm")
                 {
                     await RunLlmModeAsync();
@@ -527,6 +603,10 @@ namespace tools
                                 
                                 // 将执行结果保存到记忆
                                 SaveCommandResultToMemory(matchedCommand, result, capturedOutput);
+                                
+                                // 记录最后执行的命令（内存 + 文件）
+                                _lastCommand = fullCommand;
+                                SaveLastCommandToFile(fullCommand);
                             }
                             catch
                             {

@@ -63,7 +63,19 @@ namespace tools
                 {
                     var json = File.ReadAllText(_shotMemoryFile, Encoding.UTF8);
                     var messages = JsonConvert.DeserializeObject<List<ChatMessage>>(json) ?? new List<ChatMessage>();
-                    return messages.Where(m => m.Role != "system").ToList();
+                    
+                    // 只保留合法的 role 值：user, assistant, tool, function
+                    var validRoles = new HashSet<string> { "user", "assistant", "tool", "function" };
+                    var filteredMessages = messages.Where(m => validRoles.Contains(m.Role)).ToList();
+                    
+                    // 如果有被过滤的消息，提示用户并重新保存
+                    if (filteredMessages.Count < messages.Count)
+                    {
+                        Console.WriteLine($"[调试] 从短期记忆中过滤掉 {messages.Count - filteredMessages.Count} 条非法 role 的消息");
+                        SaveMessagesToDisk(filteredMessages);
+                    }
+                    
+                    return filteredMessages;
                 }
             }
             catch (Exception ex)
@@ -81,7 +93,9 @@ namespace tools
         {
             try
             {
-                var filteredMessages = messages.Where(m => m.Role != "system").ToList();
+                // 只保留合法的 role 值：user, assistant, tool, function
+                var validRoles = new HashSet<string> { "user", "assistant", "tool", "function" };
+                var filteredMessages = messages.Where(m => validRoles.Contains(m.Role)).ToList();
                 
                 // 如果消息超过 10 条，保留最近的 10 条（5 轮对话）
                 if (filteredMessages.Count > 10)

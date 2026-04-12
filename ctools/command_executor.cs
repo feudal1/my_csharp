@@ -67,6 +67,21 @@ namespace tools
 
                 // 每次执行命令前重新获取当前激活的模型
                 var swModel = (ModelDoc2)swApp.ActiveDoc;
+                
+                // 如果 ActiveDoc 为 null，尝试通过 IActiveDoc2 获取
+                if (swModel == null)
+                {
+                    try
+                    {
+                        swModel = (ModelDoc2)swApp.IActiveDoc2;
+                        Console.WriteLine($"\n[调试] CommandExecutor: 通过 IActiveDoc2 获取到模型：{(swModel != null ? swModel.GetTitle() : "null")}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"\n[调试] CommandExecutor: IActiveDoc2 获取失败：{ex.Message}");
+                    }
+                }
+                
                 _swModelUpdater(swModel);
                 
                 if (swModel == null)
