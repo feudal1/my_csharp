@@ -1,9 +1,9 @@
 namespace tools;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
-public class asm2step
+public class one2step
 {
-    static public string? run( ModelDoc2 swModel)
+    static public int run( ModelDoc2 swModel)
     {
         string fullPath = swModel.GetPathName();
         string partname = Path.GetFileNameWithoutExtension(fullPath);
@@ -11,7 +11,7 @@ public class asm2step
         if (string.IsNullOrEmpty(fullPath))
         {
             Console.WriteLine("错误：文档尚未保存，请先保存文件。");
-            return null;
+            return 0;
         }
                 
         // 获取当前文件所在目录
@@ -22,12 +22,12 @@ public class asm2step
         string folderName = new DirectoryInfo(currentDirectory).Name;
                 
         // 构建完整的输出路径
-        string outputPath = Path.Combine(parentDirectory, $"{folderName}.STEP");
+        string outputPath = Path.Combine(currentDirectory, $"{partname}.STEP");
                 
         var result=swModel.SaveAs3(outputPath, 0, 2);
                 
         Console.WriteLine($"{result}，已导出 STEP 文件到：{outputPath}");
-        return outputPath ;
+        return 1 ;
     }
 
   

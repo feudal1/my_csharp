@@ -78,12 +78,17 @@ namespace tools
             }
         }
 
-        [Command("asm2step", Description = "装配体导出为 STEP 格式", Parameters = "无", Group = "solidworks")]
-        static void Asm2StepCommand(string[] args)
+
+
+        [Command("asm2step", Description = "批量导出装配体中所有零件为 STEP", Parameters = "无", Group = "solidworks")]
+        static void AsmBatchStepCommand(string[] args)
         {
             if (swApp == null || swModel == null) return;
 
-            asm2step.run(swModel);
+            asm2do.run(swApp, swModel, (model, app) =>
+            {
+                return one2step.run(model);
+            });
         }
 
         [Command("folder2step", Description = "文件夹内零件装配体导出为 STEP 格式", Parameters = "无", Group = "solidworks")]
@@ -129,7 +134,7 @@ namespace tools
                         {
                             swModel.Visible = true;
                             // 转换为 DWG
-                            asm2step.run(swModel);
+                            one2step.run(swModel);
                             
                             // 关闭已处理的文档
                             swApp.CloseDoc(swModel.GetTitle());
