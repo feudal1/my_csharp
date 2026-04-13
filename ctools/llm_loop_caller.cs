@@ -202,11 +202,13 @@ namespace tools
                     ? functionName 
                     : $"{functionName} {argumentValue}";
                         
+                Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine($"\n>>> Tool 调用：{functionName}");
                 if (!string.IsNullOrEmpty(argumentValue))
                 {
                     Console.WriteLine($"    参数：{argumentValue}");
                 }
+                Console.ResetColor();
                 
                 // 拦截 Console 输出到 tool 里面
                 _consoleOutputCapture!.GetStringBuilder().Clear();
@@ -237,7 +239,9 @@ namespace tools
                     Console.SetOut(_consoleOutputCapture);
                 }
                         
+                Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine($"\n>>> 正在执行命令：{fullCommand}...\n");
+                Console.ResetColor();
                 
                 try
                 {
@@ -249,7 +253,9 @@ namespace tools
                     // 获取捕获的输出
                     string capturedOutput = _consoleOutputCapture.ToString();
                     
+                    Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"\n[调试] ExecuteToolCallAsync - 执行结果：{result}");
+                    Console.ResetColor();
                     
                     // 显示捕获的输出
                     if (!string.IsNullOrEmpty(capturedOutput))
@@ -273,8 +279,10 @@ namespace tools
             }
             catch (Exception ex)
             {
+                Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine($"\n[错误] ExecuteToolCallAsync 异常：{ex}");
                 Console.WriteLine($"\n❌ 执行 Tool 调用失败：{ex.Message}");
+                Console.ResetColor();
                 return ($"执行失败：{ex.Message}", "");
             }
         }
@@ -545,9 +553,22 @@ namespace tools
                     else
                     {
                         Console.WriteLine($"\n>>> 重复执行上一次命令：{_lastCommand}");
-                        input = _lastCommand;  // 将 input 设置为上一次的命令，继续后续处理
+                        
+                        // 询问用户是否确认执行
+                        Console.Write("是否执行此命令？ (y/n): ");
+                        var confirmInput = await GetUserInputAsync("");
+                        confirmInput = confirmInput?.Trim().ToLower();
+                        
+                        if (confirmInput == "y" || confirmInput == "yes")
+                        {
+                            input = _lastCommand;  // 将 input 设置为上一次的命令，继续后续处理
+                        }
+                        else
+                        {
+                            Console.WriteLine("已取消执行");
+                            continue;
+                        }
                     }
-                    continue;
                 }
                 
                 if (input.ToLower() == "llm")
@@ -567,13 +588,17 @@ namespace tools
                     // 完全匹配：直接调用
                     if (isExactMatch)
                     {
+                        Console.ForegroundColor = ConsoleColor.Green;
                         Console.WriteLine($"\n>>> 检测到完全匹配的命令：{matchedCommand}");
+                        Console.ResetColor();
                         
                         try
                         {
                             string fullCommand = input;
                             
+                            Console.ForegroundColor = ConsoleColor.Yellow;
                             Console.WriteLine($"\n>>> 正在执行命令：{fullCommand}...\n");
+                            Console.ResetColor();
                             
                             // 拦截 Console 输出
                             _consoleOutputCapture!.GetStringBuilder().Clear();
@@ -592,7 +617,9 @@ namespace tools
                                 // 获取捕获的输出
                                 string capturedOutput = _consoleOutputCapture.ToString();
                                 
+                                Console.ForegroundColor = ConsoleColor.Green;
                                 Console.WriteLine($"\n[调试] ExecuteCommandAsync - 执行结果：{result}");
+                                Console.ResetColor();
                                 
                                 // 显示捕获的输出
                                 if (!string.IsNullOrEmpty(capturedOutput))
@@ -617,15 +644,19 @@ namespace tools
                         }
                         catch (Exception ex)
                         {
+                            Console.ForegroundColor = ConsoleColor.Red;
                             Console.WriteLine($"\n[错误] 命令执行失败：{ex.Message}\n");
+                            Console.ResetColor();
                         }
                         continue;
                     }
                     // 模糊匹配：发送给 LLM 处理
                     else
                     {
+                        Console.ForegroundColor = ConsoleColor.Magenta;
                         Console.WriteLine($"\n>>> 检测到模糊匹配的命令：'{input}' -> '{matchedCommand}' (相似度：{matchScore:F2})");
                         Console.WriteLine(">>> 将请求发送给 LLM 进一步确认...\n");
+                        Console.ResetColor();
                     }
                 }
         
@@ -634,10 +665,22 @@ namespace tools
                     // 使用 Tool 调用模式
                     var (response, toolCalls) = await _llmService.ChatWithToolsAsync(input, toolDefinitions);
                     
+                    Console.ForegroundColor = ConsoleColor.Blue;
+                    Console.WriteLine($"\n[调试] LLM 响应分析:");
+                    Console.WriteLine($"  - 是否有文本回复: {!string.IsNullOrEmpty(response)}");
+                    Console.WriteLine($"  - 是否有工具调用: {toolCalls != null && toolCalls.Count > 0}");
+                    if (toolCalls != null)
+                    {
+                        Console.WriteLine($"  - 工具调用数量: {toolCalls.Count}");
+                    }
+                    Console.ResetColor();
+                    
                     // 处理 Tool 调用
                     if (toolCalls != null && toolCalls.Count > 0)
                     {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
                         Console.WriteLine($"\n>>> 检测到 {toolCalls.Count} 个命令调用请求");
+                        Console.ResetColor();
                         
                         var results = new List<(string Result, string CapturedOutput)>();
                         foreach (var toolCall in toolCalls)
@@ -648,7 +691,9 @@ namespace tools
                         
                         if (results.Count > 0)
                         {
+                            Console.ForegroundColor = ConsoleColor.Green;
                             Console.WriteLine($"\n>>> 所有命令执行完成");
+                            Console.ResetColor();
                                                 
                             // 将 Tool 调用结果保存到短期记忆（以 user 角色）
                             SaveToolResultsToMemory(toolCalls, results);
@@ -657,12 +702,25 @@ namespace tools
                     else if (!string.IsNullOrEmpty(response))
                     {
                         // 普通文本回复
+                        Console.ForegroundColor = ConsoleColor.Cyan;
                         Console.WriteLine($"\n{response}");
+                        Console.ResetColor();
+                        
+                        // 如果应该调用工具但没有调用，给出提示
+                        if (input.ToLower().Contains("导出") || input.ToLower().Contains("清理") || 
+                            input.ToLower().Contains("打开") || input.ToLower().Contains("关闭"))
+                        {
+                            Console.ForegroundColor = ConsoleColor.Magenta;
+                            Console.WriteLine($"\n[提示] 检测到可能的操作请求，但未触发工具调用。请尝试更明确的命令喵~");
+                            Console.ResetColor();
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine($"\n[错误] 调用失败：{ex.Message}\n");
+                    Console.ResetColor();
                 }
             }
         }
@@ -712,7 +770,9 @@ namespace tools
             }
             catch (Exception ex)
             {
+                Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine($"[警告] 保存 Tool 调用结果失败：{ex.Message}");
+                Console.ResetColor();
             }
         }
 
@@ -746,7 +806,9 @@ namespace tools
             }
             catch (Exception ex)
             {
+                Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine($"[警告] 保存命令执行结果失败：{ex.Message}");
+                Console.ResetColor();
             }
         }
 
@@ -783,7 +845,9 @@ namespace tools
                 }
                 catch (Exception ex)
                 {
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine($"\n[错误] LLM 响应失败：{ex.Message}\n");
+                    Console.ResetColor();
                 }
             }
         }

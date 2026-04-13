@@ -67,6 +67,7 @@ namespace tools
                 Console.WriteLine($"deleteresult:{deleteresult},colunmname{colunmname}");
                 swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,2,"生产类型",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
                 swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,3,"是否出图",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
+                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,4,"尺寸",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
                 var count = swTableAnnotation.RowCount;
                 TopologyLabeler.Initialize();
                 var database = TopologyLabeler.GetDatabase();
@@ -119,7 +120,75 @@ namespace tools
                         string bodyName = parts[0];
                        string label =  parts[1];
                         swTableAnnotation.set_Text(i, 3,  label);
-                    
+                        
+                        // 如果标签是"管件"，获取零件尺寸并添加到BOM表
+                        if (label == "管件")
+                        {
+                            try
+                            {
+                                // 获取零件文档 - 使用 GetComponents 方法遍历所有组件来查找
+                                AssemblyDoc swAssembly = (AssemblyDoc)swModel;
+                                Component2 targetComponent = null;
+                                
+                                // 获取所有组件
+                                object[] allComponents = (object[])swAssembly.GetComponents(false);
+                                
+                                // 遍历所有组件，按名称查找目标组件
+                                foreach (object compObj in allComponents)
+                                {
+                                    Component2 component = (Component2)compObj;
+                                    string componentName = component.Name2;
+                                    
+                                    // 去掉"/"号及之前的文字，只保留后面的部分
+                                    int slashIndex = componentName.LastIndexOf('/');
+                                    if (slashIndex >= 0 && slashIndex < componentName.Length - 1)
+                                    {
+                                        componentName = componentName.Substring(slashIndex + 1);
+                                    }
+                                    
+                                    // 去掉末尾的"-数字"部分（例如："零件名-1" -> "零件名"）
+                                    int lastDashIndex = componentName.LastIndexOf('-');
+                                    if (lastDashIndex > 0 && lastDashIndex < componentName.Length - 1)
+                                    {
+                                        string suffix = componentName.Substring(lastDashIndex + 1);
+                                        // 检查后缀是否为纯数字
+                                        if (int.TryParse(suffix, out _))
+                                        {
+                                            componentName = componentName.Substring(0, lastDashIndex);
+                                        }
+                                    }
+                                    
+                                    // 比较组件名称（不区分大小写）
+                                    if (componentName.Equals(partname, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        targetComponent = component;
+                                        break; // 找到第一个匹配的就跳出内层循环
+                                    }
+                                }
+                                
+                                if (targetComponent == null)
+                                {
+                                    continue; // 没找到匹配的组件，跳过当前BOM行
+                                }
+                                
+                                ModelDoc2 partDoc = (ModelDoc2)targetComponent.GetModelDoc2();
+                                if (partDoc != null && partDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
+                                {
+                                    PartDoc part = (PartDoc)partDoc;
+                                    var dimensions = PartDimensionHelper.GetPartDimensions(part);
+                                    
+                                    // 将尺寸格式化为字符串并添加到BOM表
+                                    string dimensionStr = $"{dimensions.length}x{dimensions.width}x{dimensions.height}";
+                                    swTableAnnotation.set_Text(i, 5, dimensionStr);
+                                    
+                                    Debug.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"获取管件 '{partname}' 尺寸时出错: {ex.Message}");
+                            }
+                        }
                     }
                   
             

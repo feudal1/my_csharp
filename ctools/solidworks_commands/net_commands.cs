@@ -81,45 +81,62 @@ namespace tools
                 
                 if (matches.Count > 0)
                 {
-                    // 按相似度排序，取最高的标注值
-                    var topMatch = matches.OrderByDescending(m => m.Similarity).First();
+                    // 按相似度排序
+                    var sortedMatches = matches.OrderByDescending(m => m.Similarity).ToList();
+                    int currentIndex = 0;
                     
-                    Console.WriteLine($"\n{'=',60}");
-                    Console.WriteLine("推荐标注类别");
-                    Console.WriteLine($"{'=',60}");
-                    Console.WriteLine($"1. 标注值：{topMatch.LabelValue}");
-                    Console.WriteLine($"   最高相似度：{topMatch.Similarity:F3} ({topMatch.Similarity * 100:F1}%)");
-                    Console.WriteLine($"   置信度：{topMatch.Confidence:F2}");
-                    Console.WriteLine($"{'=',60}\n");
-                    
-                    Console.Write($"是否按最高推荐标注值 '{topMatch.LabelValue}' 标注所有 {bodyIds.Count} 个 body？(y/n): ");
-                    string? confirm = Console.ReadLine()?.Trim().ToLower();
-                    
-                    if (confirm == "y" || confirm == "yes")
+                    while (currentIndex < sortedMatches.Count)
                     {
-                        Console.WriteLine($"\n正在标注 {bodyIds.Count} 个 body 为 '{topMatch.LabelValue}'...\n");
+                        var topMatch = sortedMatches[currentIndex];
                         
-                        for (int i = 0; i < bodyIds.Count; i++)
+                        Console.WriteLine($"\n{'=',60}");
+                        Console.WriteLine("推荐标注类别");
+                        Console.WriteLine($"{'=',60}");
+                        Console.WriteLine($"{currentIndex + 1}. 标注值：{topMatch.LabelValue}");
+                        Console.WriteLine($"   最高相似度：{topMatch.Similarity:F3} ({topMatch.Similarity * 100:F1}%)");
+                        Console.WriteLine($"   置信度：{topMatch.Confidence:F2}");
+                        Console.WriteLine($"   对应零件：{topMatch.PartName}");
+                        Console.WriteLine($"{'=',60}\n");
+                        
+                        Console.Write($"是否按此推荐标注值 '{topMatch.LabelValue}' 标注所有 {bodyIds.Count} 个 body？(y/n/c): ");
+                        string? confirm = Console.ReadLine()?.Trim().ToLower();
+                        
+                        if (confirm == "y" || confirm == "yes")
                         {
-                            string category = "结构类型";
-                            database.AddLabel(bodyIds[i], category, topMatch.LabelValue, confidence: 1.0, notes: "推荐标注");
-                            Console.WriteLine($"  ✓ Body [{i}] {graphs[i].FullBodyName} → {topMatch.LabelValue}");
+                            Console.WriteLine($"\n正在标注 {bodyIds.Count} 个 body 为 '{topMatch.LabelValue}'...\n");
+                            
+                            for (int i = 0; i < bodyIds.Count; i++)
+                            {
+                                string category = "结构类型";
+                                database.AddLabel(bodyIds[i], category, topMatch.LabelValue, confidence: 1.0, notes: "推荐标注");
+                                Console.WriteLine($"  ✓ Body [{i}] {graphs[i].FullBodyName} → {topMatch.LabelValue}");
+                            }
+                            
+                            Console.WriteLine($"\n✓ 成功标注 {bodyIds.Count} 个 body");
+                            TopologyLabeler.ShowStatistics();
+                            return;
                         }
-                        
-                        Console.WriteLine($"\n✓ 成功标注 {bodyIds.Count} 个 body");
-                        TopologyLabeler.ShowStatistics();
-                        return;
-                    }
-                    else
-                    {
-                        Console.WriteLine("\n已取消标注操作");
-                        Console.WriteLine("\n=== 用法 ===");
-                        Console.WriteLine("label_all [值]");
-                        Console.WriteLine("示例:");
-                        Console.WriteLine("  label_all 管件");
-                        Console.WriteLine("  label_all 钣金件");
-                        Console.WriteLine("  label_all 结构件");
-                        return;
+                        else if (confirm == "c" || confirm == "continue")
+                        {
+                            currentIndex++;
+                            if (currentIndex >= sortedMatches.Count)
+                            {
+                                Console.WriteLine("\n已显示所有推荐项");
+                                break;
+                            }
+                            continue;
+                        }
+                        else
+                        {
+                            Console.WriteLine("\n已取消标注操作");
+                            Console.WriteLine("\n=== 用法 ===");
+                            Console.WriteLine("label_all [值]");
+                            Console.WriteLine("示例:");
+                            Console.WriteLine("  label_all 管件");
+                            Console.WriteLine("  label_all 钣金件");
+                            Console.WriteLine("  label_all 结构件");
+                            return;
+                        }
                     }
                 }
                 else

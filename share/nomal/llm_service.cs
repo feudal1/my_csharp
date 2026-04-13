@@ -379,6 +379,12 @@ namespace tools
             sysPrompt.AppendLine("你是一个猫娘 SolidWorks 自动化助手，可以帮助用户执行各种 SolidWorks 操作。");
             sysPrompt.AppendLine("性格特点：活泼可爱，说话结尾会带'喵'字。");
             sysPrompt.AppendLine("交流方式：使用可爱的语气，每句话结尾都要加上'喵'或'喵~'");
+            sysPrompt.AppendLine("");
+            sysPrompt.AppendLine("重要规则：");
+            sysPrompt.AppendLine("1. 当用户提供可用工具时，你必须优先使用工具调用来完成任务，而不是自由文本回复");
+            sysPrompt.AppendLine("2. 如果用户的请求可以通过提供的工具完成，请立即调用相应的工具");
+            sysPrompt.AppendLine("3. 只有在无法找到合适工具或需要澄清用户意图时，才可以使用自由文本回复");
+            sysPrompt.AppendLine("4. 工具调用格式必须严格按照要求，不要自行创造工具名称");
 
             return sysPrompt.ToString();
         }
@@ -458,7 +464,9 @@ namespace tools
             
             if (string.IsNullOrEmpty(apiKey))
             {
+                Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("\n[警告] 未找到 DASHSCOPE_API_KEY 环境变量。");
+                Console.ResetColor();
                 Console.Write("请输入临时 API Key: ");
                 
                 // 使用异步方式读取控制台输入
@@ -493,22 +501,12 @@ namespace tools
                 sysPrompt += searchResult;
             }
             
-            // 读取最近运行日志并更新/添加到记忆中
+            // 读取最近运行日志并添加到 system prompt 中
             string recentLog = ReadRecentRunLog(500);
             if (!string.IsNullOrEmpty(recentLog))
             {
-                // 查找是否已存在运行日志条目
-                var existingLogMessage = messages.FirstOrDefault(m => m.Role == "runlog");
-                if (existingLogMessage != null)
-                {
-                    // 更新现有的运行日志
-                    existingLogMessage.Content = recentLog;
-                }
-                else
-                {
-                    // 添加新的运行日志条目
-                    messages.Add(new ChatMessage { Role = "runlog", Content = recentLog });
-                }
+                sysPrompt += "\n\n=== 最近的运行日志 ===\n";
+                sysPrompt += recentLog;
             }
             
             // 构建完整的消息列表
@@ -579,7 +577,8 @@ namespace tools
                 userPrompt, 
                 filteredTools,  // 只传递筛选后的工具
                 apiKey, 
-                DefaultModel
+                DefaultModel,
+                forceToolCall: true  // 强制要求工具调用
             );
                     
             var elapsedMs = (DateTime.Now - startTime).TotalMilliseconds;
@@ -757,7 +756,9 @@ namespace tools
                 }
                 catch (HttpRequestException httpEx)
                 {
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine($"\n[严重错误] HTTP 请求异常：{httpEx.Message}");
+                    Console.ResetColor();
                     Console.WriteLine($"[调试] 异常类型：{httpEx.GetType().FullName}");
                     if (httpEx.InnerException != null)
                     {
@@ -768,13 +769,17 @@ namespace tools
                 }
                 catch (TaskCanceledException cancelEx)
                 {
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine($"\n[严重错误] 请求被取消或超时：{cancelEx.Message}");
+                    Console.ResetColor();
                     Console.WriteLine($"[调试] 是否因超时取消：{cancelEx.InnerException is TimeoutException}");
                     throw;
                 }
                 catch (Exception sendEx)
                 {
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine($"\n[严重错误] 发送请求时出错：{sendEx.Message}");
+                    Console.ResetColor();
                     Console.WriteLine($"[调试] 异常类型：{sendEx.GetType().FullName}");
                     if (sendEx.InnerException != null)
                     {
@@ -801,7 +806,9 @@ namespace tools
                     {
                         errorBody = $"无法读取错误内容：{readEx.Message}";
                     }
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine($"\n[严重错误] API 请求失败 ({response.StatusCode}): {errorBody}");
+                    Console.ResetColor();
                     throw new HttpRequestException($"API 请求失败 ({response.StatusCode}): {errorBody}");
                 }
 
@@ -880,14 +887,18 @@ namespace tools
 EndStream:
                 if (!hasOutputStarted)
                 {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
                     Console.WriteLine("\n[提示] 模型未返回任何文本内容。");
+                    Console.ResetColor();
                 }
 
                 return fullResponse.ToString();
             }
             catch (Exception ex)
             {
+                Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine($"\n\n[严重错误] 调用失败：{ex.Message}");
+                Console.ResetColor();
                 throw;
             }
         }
@@ -979,7 +990,8 @@ EndStream:
             string userPrompt, 
             List<ToolDefinition> tools, 
             string apiKey, 
-            string model)
+            string model,
+            bool forceToolCall = false)
         {
             // 添加用户消息
             var messagesWithUser = new List<object>();
@@ -989,34 +1001,70 @@ EndStream:
             }
             messagesWithUser.Add(new { role = "user", content = userPrompt });
 
-            var requestBody = new
+            // 构建请求体
+            object requestBody;
+            if (forceToolCall && tools.Count > 0)
             {
-                model = model,
-                stream = false, // Tool 调用不使用流式
-                messages = messagesWithUser.ToArray(),
-                tools = tools.Select(t => 
+                // 强制要求工具调用时，使用 dynamic 对象添加 tool_choice
+                var reqDict = new Dictionary<string, object>
                 {
-                    // 如果 parameters 是空的 FunctionParameters，序列化为空对象
-                    var parametersObj = t.Function.Parameters;
-                    if (parametersObj is FunctionParameters fp && 
-                        fp.Properties != null && fp.Properties.Count == 0)
+                    ["model"] = model,
+                    ["stream"] = false,
+                    ["messages"] = messagesWithUser.ToArray(),
+                    ["tools"] = tools.Select(t => 
                     {
-                        // 对于没有参数的函数，使用空对象而不是空的 FunctionParameters
-                        parametersObj = new { type = "object", properties = new object() };
-                    }
-                    
-                    return new
-                    {
-                        type = t.Type,
-                        function = new
+                        var parametersObj = t.Function.Parameters;
+                        if (parametersObj is FunctionParameters fp && 
+                            fp.Properties != null && fp.Properties.Count == 0)
                         {
-                            name = t.Function.Name,
-                            description = t.Function.Description,
-                            parameters = parametersObj
+                            parametersObj = new { type = "object", properties = new object() };
                         }
-                    };
-                }).ToArray()
-            };
+                        
+                        return new
+                        {
+                            type = t.Type,
+                            function = new
+                            {
+                                name = t.Function.Name,
+                                description = t.Function.Description,
+                                parameters = parametersObj
+                            }
+                        };
+                    }).ToArray(),
+                    ["tool_choice"] = "required"  // 强制要求工具调用
+                };
+                requestBody = reqDict;
+            }
+            else
+            {
+                // 正常情况下的请求体
+                requestBody = new
+                {
+                    model = model,
+                    stream = false,
+                    messages = messagesWithUser.ToArray(),
+                    tools = tools.Select(t => 
+                    {
+                        var parametersObj = t.Function.Parameters;
+                        if (parametersObj is FunctionParameters fp && 
+                            fp.Properties != null && fp.Properties.Count == 0)
+                        {
+                            parametersObj = new { type = "object", properties = new object() };
+                        }
+                        
+                        return new
+                        {
+                            type = t.Type,
+                            function = new
+                            {
+                                name = t.Function.Name,
+                                description = t.Function.Description,
+                                parameters = parametersObj
+                            }
+                        };
+                    }).ToArray()
+                };
+            }
             
             // 【调试断点】在这里检查请求体内容
             string jsonBody = JsonConvert.SerializeObject(requestBody);
@@ -1024,6 +1072,15 @@ EndStream:
             System.Diagnostics.Debug.WriteLine(jsonBody);
             System.IO.File.WriteAllText("debug_tool_request.json", jsonBody, Encoding.UTF8);
             System.Diagnostics.Debug.WriteLine($"[调试] 请求 JSON 已保存到 debug_tool_request.json");
+            
+            // 打印关键调试信息
+            Console.WriteLine($"\n[调试] 工具调用配置:");
+            Console.WriteLine($"  - 强制工具调用: {forceToolCall}");
+            Console.WriteLine($"  - 可用工具数量: {tools.Count}");
+            if (forceToolCall)
+            {
+                Console.WriteLine($"  - tool_choice: required");
+            }
             
             using var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
             
@@ -1040,6 +1097,7 @@ EndStream:
             Console.WriteLine($"\n[调试] 发送 Tool 调用请求到：{ApiUrl}");
             Console.WriteLine($"[调试] 工具数量：{tools.Count}");
             Console.WriteLine($"[调试] 消息数量：{messagesWithUser.Count}");
+            Console.WriteLine($"[调试] 是否强制工具调用：{forceToolCall}");
             
             // 【调试断点】发送请求前
             var httpRequest = new HttpRequestMessage
@@ -1072,7 +1130,17 @@ EndStream:
             }
             
             var contentToken = message["content"];
-            return (contentToken?.ToString() ?? "", null);
+            string responseText = contentToken?.ToString() ?? "";
+            
+            // 如果强制要求工具调用但没有返回工具调用，记录警告
+            if (forceToolCall && string.IsNullOrEmpty(responseText) == false)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"\n[警告] 强制工具调用模式下，LLM 返回了文本而非工具调用: {responseText}");
+                Console.ResetColor();
+            }
+            
+            return (responseText, null);
         }
 
         /// <summary>
