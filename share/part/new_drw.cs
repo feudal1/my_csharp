@@ -54,7 +54,16 @@ namespace tools
             
               var view4 = drawingDoc.CreateFlatPatternViewFromModelView3( partdoc.GetPathName(), "",0.20, 0.15, 0,false,false);
         
-          
+                     var boolstatus =
+                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowWidth, 0,
+                    0.002);
+            boolstatus =
+                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowHeight,
+                    0, 0.0005);
+            boolstatus =
+                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowLength,
+                    0, 0.0031);
+           
                swModel.EditRebuild3();
               swModel.SaveAs3(drwpath, 0, 0);
   Console.WriteLine($"成功，已创建工程图{drwpath}");

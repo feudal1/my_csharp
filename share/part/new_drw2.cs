@@ -52,7 +52,16 @@ namespace tools
                swModel.SetUserPreferenceToggle((int)swUserPreferenceToggle_e.swDisplaySketches, false);
               // swModel.Extension.SelectByID2(view1.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
             
-          
+                     var boolstatus =
+                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowWidth, 0,
+                    0.002);
+            boolstatus =
+                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowHeight,
+                    0, 0.0005);
+            boolstatus =
+                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowLength,
+                    0, 0.0031);
+           
           
                swModel.EditRebuild3();
               swModel.SaveAs3(drwpath, 0, 0);

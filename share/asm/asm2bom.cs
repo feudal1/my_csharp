@@ -65,12 +65,11 @@ namespace tools
                 var deleteresult=swTableAnnotation.DeleteColumn2(2, false);
                 swModel.EditRebuild3();
                 Console.WriteLine($"deleteresult:{deleteresult},colunmname{colunmname}");
-                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,2,"生产类型",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
-                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,3,"是否出图",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
-                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,4,"尺寸",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
+
+                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,2,"是否出图",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
+                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,3,"规格尺寸",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
                 var count = swTableAnnotation.RowCount;
-                TopologyLabeler.Initialize();
-                var database = TopologyLabeler.GetDatabase();
+   
               
                 // 从后向前遍历，避免插入行后影响索引
                 int currentRowCount = count;
@@ -83,6 +82,7 @@ namespace tools
                         continue;
                     }
                     var partname = cellText.Trim();
+                    swTableAnnotation.set_Text(i, 1, partname.Replace("=", ""));
                     Debug.WriteLine($"partname:{partname}");
                     var partnumber=swTableAnnotation.get_Text(i, 0);
                  
@@ -93,37 +93,16 @@ namespace tools
                         dwgExists = FindDwgFile(directory, partname);
                     }
                     
-                    // 获取所有 body 及其标签，格式：bodyName1,label1;bodyName2,label2
-                    string labelsString = database!.GetLabelsByPartName(partname);
-                                        
-                 
+         
                         if (dwgExists)
                         {
-                            swTableAnnotation.set_Text(i, 4, "已出图");
+                            swTableAnnotation.set_Text(i, 3, "已出图");
                         }
                       
                  
-                                         // 检查 labelsString 是否有效
-                    if (string.IsNullOrEmpty(labelsString))
-                    {
-                        Debug.WriteLine($"警告：零件 '{partname}' 没有找到拓扑标注信息。");
-                        continue;
-                    }     
-                    // 分割每个 body 的标注（用分号分隔）
-                    string[] bodyLabelPairs = labelsString.Split(';');
+    
+     
                     
-                    if (bodyLabelPairs.Length == 1)
-                    {
-                        // 设置当前行的信息（第一个 body）
-                        string firstPair = bodyLabelPairs[0];
-                        string[] parts = firstPair.Split(',');
-                        string bodyName = parts[0];
-                       string label =  parts[1];
-                        swTableAnnotation.set_Text(i, 3,  label);
-                        
-                        // 如果标签是"管件"，获取零件尺寸并添加到BOM表
-                        if (label == "管件")
-                        {
                             try
                             {
                                 // 获取零件文档 - 使用 GetComponents 方法遍历所有组件来查找
@@ -162,11 +141,8 @@ namespace tools
                                     if (componentName.Equals(partname, StringComparison.OrdinalIgnoreCase))
                                     {
                                         targetComponent = component;
-                                        break; // 找到第一个匹配的就跳出内层循环
-                                    }
-                                }
-                                
-                                if (targetComponent == null)
+                                       
+                                        if (targetComponent == null)
                                 {
                                     continue; // 没找到匹配的组件，跳过当前BOM行
                                 }
@@ -179,20 +155,27 @@ namespace tools
                                     
                                     // 将尺寸格式化为字符串并添加到BOM表
                                     string dimensionStr = $"{dimensions.length}x{dimensions.width}x{dimensions.height}";
-                                    swTableAnnotation.set_Text(i, 5, dimensionStr);
+                                    if(partname!="脚杯座")dimensionStr=dimensionStr.Replace("40x60", "2.0x40x60").Replace("60x40", "2.0x40x60");
+                                    if (partname.Contains("方管") & !dimensionStr.Contains("40x60"))Console.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
+                                    swTableAnnotation.set_Text(i, 3, dimensionStr);
                                     
                                     Debug.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
+                                     break; // 找到第一个匹配的就跳出内层循环
                                 }
+                                    }
+                                }
+                                
+                                
                             }
                             catch (Exception ex)
                             {
                                 Debug.WriteLine($"获取管件 '{partname}' 尺寸时出错: {ex.Message}");
                             }
-                        }
+                        
                     }
                   
             
-                }
+                
 
                
                 

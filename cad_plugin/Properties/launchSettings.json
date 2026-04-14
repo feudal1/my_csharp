@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "cad_plugin": {
+      "commandName": "Project"
+    },
+    "配置文件 1": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\Autodesk\\AutoCAD 2022\\acad.exe"
+    }
+  }
+}

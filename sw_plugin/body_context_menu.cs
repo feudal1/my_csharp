@@ -115,6 +115,7 @@ namespace SolidWorksAddinStudy
            }
        }
 
+        [Command(5007, "复制DWG到剪贴板", "复制模型对应的工程图DWG文件到剪贴板", "copy_dwg_clipboard", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY)]
         public string copy_model_dwg_to_clipboard()
         {
             ShowOutputWindow();
@@ -271,10 +272,6 @@ namespace SolidWorksAddinStudy
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "new_drw", "new_drawing_from_part", "", "", "");
                    swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID,	(int)swSelectType_e.swSelFACES,"open_dwg", "open_dwg", "","","");
                  swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID,	(int)swSelectType_e.swSelFACES,"open_dwg", "open_dwg", "","","");
-                       
-                 // 添加复制模型DWG到剪贴板的菜单项
-                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "copy_dwg_clipboard", "copy_model_dwg_to_clipboard", "", "", "");
-                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "copy_dwg_clipboard", "copy_model_dwg_to_clipboard", "", "", "");
                       
             }
             catch (Exception ex)

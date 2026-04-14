@@ -80,8 +80,9 @@ namespace tools
                 }
                 else
                 {
-                    swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
-                    swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
+                    // swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
+                    // swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
+                   swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R12);
                     var meterialDB = "";
                     string meterial=((PartDoc)partDoc).GetMaterialPropertyName( out meterialDB);
                     
@@ -93,16 +94,7 @@ namespace tools
                 }
             }
             
-            var boolstatus =
-                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowWidth, 0,
-                    0.002);
-            boolstatus =
-                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowHeight,
-                    0, 0.0005);
-            boolstatus =
-                swModel.Extension.SetUserPreferenceDouble((int)swUserPreferenceDoubleValue_e.swDetailingArrowLength,
-                    0, 0.0031);
-           
+ 
             if (!Directory.Exists(outputfile))
             {
                 Directory.CreateDirectory(outputfile);

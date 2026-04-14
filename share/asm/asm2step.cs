@@ -19,11 +19,14 @@ public class one2step
         // 获取父文件夹
         string? parentDirectory = Directory.GetParent(currentDirectory)?.FullName;
         // 获取当前文件夹名称作为文件名
-        string folderName = new DirectoryInfo(currentDirectory).Name;
-                
+        
         // 构建完整的输出路径
-        string outputPath = Path.Combine(currentDirectory, $"{partname}.STEP");
-                
+        string outputPath = Path.Combine(currentDirectory, "step", $"{partname}.STEP");
+                 string outputDirectory = Path.GetDirectoryName(outputPath);
+        if (!Directory.Exists(outputDirectory))
+        {
+            Directory.CreateDirectory(outputDirectory);
+        }       
         var result=swModel.SaveAs3(outputPath, 0, 2);
                 
         Console.WriteLine($"{result}，已导出 STEP 文件到：{outputPath}");

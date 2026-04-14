@@ -10,7 +10,7 @@ namespace tools
 {
     public class opendwg
     {
-        static public void run(ModelDoc2 swModel, SldWorks swApp)
+        static public void run(ModelDoc2 swModel, SldWorks swApp,bool opencaxa)
         {
 
             string fullpath = swModel.GetPathName();
@@ -58,12 +58,14 @@ namespace tools
             string dwgFileName = outputfile + "\\" + Path.GetFileNameWithoutExtension(fullpath) + ".dwg";
             if (File.Exists(dwgFileName))
             {
-                if (is_cnc)
+                if (opencaxa)
+              
                 {
                     open_cad_doc_by_shell.run(dwgFileName);
                 }
                 else
                 {
+                   
                     open_cad_doc_by_name.run( dwgFileName);
                 }
             }

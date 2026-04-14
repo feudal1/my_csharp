@@ -199,8 +199,8 @@ using System.Linq;
 
 
        
-    [Command(1006, "打开 DWG工程图", "打开 DWG工程图", "opendwg", (int)swDocumentTypes_e.swDocDRAWING)]
-    private void Openwg()
+    [Command(1006, "打开 DWG工程图caxa", "打开 DWG工程图", "opendwgcaxa", (int)swDocumentTypes_e.swDocDRAWING)]
+    private void Opencaxa()
     {
         try
         {
@@ -220,7 +220,39 @@ using System.Linq;
             }
            
             // 使用 share 项目中的 drw2dwg 方法转换 DWG
-            opendwg.run(swModel, swApp);
+            opendwg.run(swModel, swApp, true);
+
+
+           
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"工程图dwg打开失败：{ex.Message}");
+            swApp?.SendMsgToUser($"工程图dwg打开失败：{ex.Message}");
+        }
+    }
+    [Command(1012, "打开 DWG工程图cad", "打开 DWG工程图", "opendwgcad", (int)swDocumentTypes_e.swDocDRAWING)]
+    private void Opencad()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个工程图文档");
+                return;
+            }
+           
+            // 使用 share 项目中的 drw2dwg 方法转换 DWG
+            opendwg.run(swModel, swApp, false);
 
 
            
@@ -349,6 +381,147 @@ using System.Linq;
         {
             Debug.WriteLine($"装配体 BOM 导出失败：{ex.Message}");
             swApp?.SendMsgToUser($"装配体 BOM 导出失败：{ex.Message}");
+        }
+    }
+
+    [Command(1011, "批量导出 STEP", "批量导出装配体中所有零件为 STEP 格式", "asm2step", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private void AsmBatchStep()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+           
+            asm2do.run(swApp, swModel, (model, app) =>
+            {
+                return one2step.run(model);
+            });
+            
+            Debug.WriteLine("装配体零件 STEP 导出完成");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"装配体 STEP 导出失败：{ex.Message}");
+            swApp?.SendMsgToUser($"装配体 STEP 导出失败：{ex.Message}");
+        }
+    }
+    [Command(1013, "复制DWG文件到剪贴板", "将当前文档对应的DWG文件路径复制到剪贴板", "copyfile", 0, ShowOutputWindow = true)]
+    private void CopyFileToClipboard()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个文档");
+                return;
+            }
+
+            string filePath = swModel.GetPathName();
+            
+            if (string.IsNullOrEmpty(filePath))
+            {
+                swApp.SendMsgToUser("当前文档尚未保存，请先保存文档");
+                return;
+            }
+
+            // 如果是DRW文件，需要查找对应的DWG文件
+            if (filePath.ToLower().EndsWith(".drw"))
+            {
+                // 使用与 drw2dwg 相同的路径计算逻辑
+                string? directory = Path.GetDirectoryName(filePath);
+                if (string.IsNullOrEmpty(directory))
+                {
+                    swApp.SendMsgToUser("无法获取文件目录");
+                    return;
+                }
+
+                string fileName = Path.GetFileNameWithoutExtension(filePath);
+                string dwgPath = null;
+
+                // 尝试多个可能的DWG路径
+                // 1. 焊接图路径
+                string weldingPath = Path.Combine(directory, "出图", "焊接图", fileName + ".dwg");
+                if (File.Exists(weldingPath))
+                {
+                    dwgPath = weldingPath;
+                }
+                else
+                {
+                    // 2. CNC路径
+                    string cncPath = Path.Combine(directory, "出图", "CNC", fileName + ".dwg");
+                    if (File.Exists(cncPath))
+                    {
+                        dwgPath = cncPath;
+                    }
+                    else
+                    {
+                        // 3. 工程图路径（可能有材质子目录）
+                        string engDir = Path.Combine(directory, "出图", "工程图");
+                        if (Directory.Exists(engDir))
+                        {
+                            // 搜索所有子目录中的DWG文件
+                            var dwgFiles = Directory.GetFiles(engDir, fileName + ".dwg", SearchOption.AllDirectories);
+                            if (dwgFiles.Length > 0)
+                            {
+                                dwgPath = dwgFiles[0];
+                            }
+                        }
+                    }
+                }
+
+                if (string.IsNullOrEmpty(dwgPath))
+                {
+                    swApp.SendMsgToUser("未找到对应的DWG文件，请先使用'工程图转DWG'命令转换");
+                    return;
+                }
+
+                filePath = dwgPath;
+            }
+            else if (!filePath.ToLower().EndsWith(".dwg"))
+            {
+                swApp.SendMsgToUser("当前文件不是DWG或DRW文件");
+                return;
+            }
+
+            if (!File.Exists(filePath))
+            {
+                swApp.SendMsgToUser($"DWG文件不存在: {filePath}");
+                return;
+            }
+
+            System.Collections.Specialized.StringCollection fileList = new System.Collections.Specialized.StringCollection();
+            fileList.Add(filePath);
+            
+            System.Windows.Forms.Clipboard.SetFileDropList(fileList);
+            
+            swApp.SendMsgToUser($"已将DWG文件复制到剪贴板:\n{Path.GetFileName(filePath)}");
+            Debug.WriteLine($"DWG文件已复制到剪贴板: {filePath}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"复制文件到剪贴板失败: {ex.Message}");
+            swApp?.SendMsgToUser($"复制文件到剪贴板失败: {ex.Message}");
         }
     }
 
