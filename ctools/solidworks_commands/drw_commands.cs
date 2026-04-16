@@ -150,5 +150,15 @@ namespace tools
 
             get_all_visable_edge.run(swModel);
         }
+
+
+
+        [Command("dimension_bends", Description = "自动标注选中视图的折弯尺寸", Parameters = "需先选择工程图视图", Group = "solidworks")]
+        static void DimensionBendsCommand(string[] args)
+        {
+            if (swApp == null) return;
+
+            benddim.标折弯尺寸(swApp);
+        }
     }
 }

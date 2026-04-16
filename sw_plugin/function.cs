@@ -624,6 +624,40 @@ using System.Linq;
 
 
 
+    [Command(1016, "标折弯尺寸", "自动标注选中视图的折弯尺寸", "dimension_bends", (int)swDocumentTypes_e.swDocDRAWING, ShowOutputWindow = true)]
+    private void DimensionBends()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个工程图文档");
+                return;
+            }
+
+            // 调用 benddim 标折弯尺寸
+            benddim.标折弯尺寸(swApp);
+            
+            Debug.WriteLine("折弯尺寸标注完成");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"标折弯尺寸失败：{ex.Message}");
+            swApp?.SendMsgToUser($"标折弯尺寸失败：{ex.Message}");
+        }
+    }
+
+
+
 
     
 }}
