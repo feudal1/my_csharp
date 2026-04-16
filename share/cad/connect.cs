@@ -77,6 +77,10 @@ namespace cad_tools
                             object? comObject = Activator.CreateInstance(comType);
                             if (comObject != null)
                             {
+                                 AcadApplication acadApp = (AcadApplication)comObject;
+                                
+                                // 关键修复：确保AutoCAD窗口可见
+                                acadApp.Visible = true;
                                 Console.WriteLine($"✓ 成功创建新实例：{progId}");
                                 return (AcadApplication)comObject;
                             }

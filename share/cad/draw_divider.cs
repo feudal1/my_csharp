@@ -18,8 +18,27 @@ namespace cad_tools
         static private void add_text(string text, double[] insertionPoint, double height)
         {
             AcadApplication? acadApp = CadConnect.GetOrCreateInstance();
-            if (acadApp == null || acadApp.ActiveDocument == null)
+            if (acadApp == null)
+            {
+                Console.WriteLine("错误：无法连接到 AutoCAD 应用程序。");
                 return;
+            }
+            
+            // 确保有活动文档
+            if (acadApp.ActiveDocument == null)
+            {
+                Console.WriteLine("警告：当前没有活动的 AutoCAD 文档，尝试创建新文档...");
+                try
+                {
+                    // 如果没有活动文档，创建一个新文档
+                    acadApp.Documents.Add("");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"创建新文档失败：{ex.Message}");
+                    return;
+                }
+            }
 
             try
             {
@@ -57,10 +76,25 @@ namespace cad_tools
             double textOffsetY)
         {
             AcadApplication? acadApp = CadConnect.GetOrCreateInstance();
-            if (acadApp == null || acadApp.ActiveDocument == null)
+            if (acadApp == null)
             {
-                Console.WriteLine($"警告：无法获取 AutoCAD 文档，跳过文件夹 {folderPath}");
+                Console.WriteLine($"错误：无法获取 AutoCAD 实例，跳过文件夹 {folderPath}");
                 return new double[] { currentX, currentY };
+            }
+            
+            // 确保有活动文档
+            if (acadApp.ActiveDocument == null)
+            {
+                Console.WriteLine($"警告：当前没有活动的 AutoCAD 文档，尝试创建新文档...");
+                try
+                {
+                    acadApp.Documents.Add("");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"创建新文档失败：{ex.Message}，跳过文件夹 {folderPath}");
+                    return new double[] { currentX, currentY };
+                }
             }
 
             double folderStartX = currentX;
@@ -143,40 +177,42 @@ namespace cad_tools
         /// <summary>
         /// 处理文件夹遍历并为每个文件夹的 DWG 文件绘制边界框（支持多层嵌套子文件夹）
         /// </summary>
-        static public void process_subfolders_with_divider()
+        /// <param name="folderPath">可选的文件夹路径，如果不提供则弹出选择对话框</param>
+        static public void process_subfolders_with_divider(string folderPath = null)
         {
-            // 在非 STA 线程上创建新线程来执行 UI 操作
-            if (System.Threading.Thread.CurrentThread.GetApartmentState() != System.Threading.ApartmentState.STA)
+            string selectedFolder = folderPath;
+            
+            // 如果没有提供路径，则需要用户选择
+            if (string.IsNullOrEmpty(selectedFolder))
             {
-                var tcs = new System.Threading.Tasks.TaskCompletionSource<string?>();
-                var thread = new System.Threading.Thread(() =>
+                // 在非 STA 线程上创建新线程来执行 UI 操作
+                if (System.Threading.Thread.CurrentThread.GetApartmentState() != System.Threading.ApartmentState.STA)
                 {
-                    try { tcs.SetResult(FolderPicker.SelectFolder()); }
-                    catch (Exception ex) { tcs.SetException(ex); }
-                });
-                thread.SetApartmentState(System.Threading.ApartmentState.STA);
-                thread.Start();
+                    var tcs = new System.Threading.Tasks.TaskCompletionSource<string?>();
+                    var thread = new System.Threading.Thread(() =>
+                    {
+                        try { tcs.SetResult(FolderPicker.SelectFolder()); }
+                        catch (Exception ex) { tcs.SetException(ex); }
+                    });
+                    thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                    thread.Start();
+                    
+                    selectedFolder = tcs.Task.Result;
+                }
+                else
+                {
+                    // 直接在当前 STA 线程执行
+                    selectedFolder = FolderPicker.SelectFolder();
+                }
                 
-                string? selectedFolder = tcs.Task.Result;
                 if (string.IsNullOrEmpty(selectedFolder))
                 {
                     Console.WriteLine("未选择文件夹，操作取消。");
                     return;
                 }
-                
-                ProcessFolderLogic(selectedFolder);
             }
-            else
-            {
-                // 直接在当前 STA 线程执行
-                string? selectedFolder = FolderPicker.SelectFolder();
-                if (string.IsNullOrEmpty(selectedFolder))
-                {
-                    Console.WriteLine("未选择文件夹，操作取消。");
-                    return;
-                }
-                ProcessFolderLogic(selectedFolder);
-            }
+            
+            ProcessFolderLogic(selectedFolder);
         }
 
         /// <summary>

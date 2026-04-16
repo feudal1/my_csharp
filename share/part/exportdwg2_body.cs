@@ -21,7 +21,8 @@ namespace tools
         private  static int options;
         private static int successcount = 0;
         
-                static public void exportfeature(Body2 body)
+        
+                static public void exportfeature(Body2 body,ModelDoc2 swModel)
                 {
                     string outputfile = "";
                     string thickness = "无";
@@ -49,6 +50,24 @@ namespace tools
                          string dwgFileName = outputfile + "\\" +  partname+"_"+body.Name + ".dwg";
                         var swFlatPatt = (FlatPatternFeatureData)swFeature2.GetDefinition();
                          swFeature2 .SetSuppression((int)swFeatureSuppressionAction_e.swUnSuppressFeature);
+                         // 展开后检查模型错误
+                         ModelDocExtension swModelDocExt = (ModelDocExtension)swModel.Extension;
+                         int nbrWhatsWrong = swModelDocExt.GetWhatsWrongCount();
+                         
+                         if (nbrWhatsWrong > 0)
+                         { 
+                             Console.WriteLine($"展开后模型存在 {nbrWhatsWrong} 个错误 ，{swModel.GetTitle()}");
+                             
+                             // 输出具体错误信息
+                             for (int i = 0; i < nbrWhatsWrong; i++)
+                             {
+                                 object feature = null;
+                                 object errorCode = null;
+                                 object description = null;
+                                 swModelDocExt.GetWhatsWrong(out feature, out errorCode, out description);
+                                 Console.WriteLine($"  错误 {i + 1}: {description}");
+                             }
+                         }
                          var fixface = (    Face2)swFlatPatt.FixedFace2;
                         var fixface_area=Math.Round( fixface.GetArea()*1000000,2);
                         
@@ -159,7 +178,7 @@ swFeature2 .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);
                     var body = (Body2)objbody;
                    
                    
-                        exportfeature(body);
+                        exportfeature(body, swModel);
                     
                   
                     

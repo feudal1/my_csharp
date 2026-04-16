@@ -55,7 +55,7 @@ namespace tools
             if (swApp == null || swModel == null) return;
 
            
-                asm2bom.run(swApp,swModel);
+                asm2bom.run(swApp,swModel,false);
        
         }
 

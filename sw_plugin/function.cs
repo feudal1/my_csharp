@@ -355,7 +355,7 @@ using System.Linq;
         }
     }
 
-     [Command(1008, "装配体导出 BOM", "生成装配体 BOM 表并导出为 Excel", "asm2bom", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+     [Command(1008, "装配体导出 BOM", "生成装配体 BOM 表并导出为 Excel", "asm2bom-pipe", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private async void Asm2bom()
     {
         try
@@ -375,7 +375,35 @@ using System.Linq;
                 return;
             }
            
-            await asm2bom.run(swApp, swModel);
+            await asm2bom.run(swApp, swModel, false);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"装配体 BOM 导出失败：{ex.Message}");
+            swApp?.SendMsgToUser($"装配体 BOM 导出失败：{ex.Message}");
+        }
+    }
+         [Command(1014, "装配体导出 BOM", "生成装配体 BOM 表并导出为 Excel", "asm2bom-sheet", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private async void Asm2bom_sheet()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+           
+            await asm2bom.run(swApp, swModel, true);
         }
         catch (Exception ex)
         {
@@ -446,45 +474,55 @@ using System.Linq;
             }
 
             // 如果是DRW文件，需要查找对应的DWG文件
-            if (filePath.ToLower().EndsWith(".drw"))
+            if (filePath.ToLower().EndsWith("drw"))
             {
+                Console.WriteLine($"检测到DRW文件: {filePath}");
                 // 使用与 drw2dwg 相同的路径计算逻辑
                 string? directory = Path.GetDirectoryName(filePath);
                 if (string.IsNullOrEmpty(directory))
                 {
+                    Console.WriteLine("无法获取文件目录");
                     swApp.SendMsgToUser("无法获取文件目录");
                     return;
                 }
 
                 string fileName = Path.GetFileNameWithoutExtension(filePath);
+                Console.WriteLine($"文件名: {fileName}");
                 string dwgPath = null;
 
                 // 尝试多个可能的DWG路径
                 // 1. 焊接图路径
                 string weldingPath = Path.Combine(directory, "出图", "焊接图", fileName + ".dwg");
+                Console.WriteLine($"检查焊接图路径: {weldingPath}, 存在: {File.Exists(weldingPath)}");
                 if (File.Exists(weldingPath))
                 {
                     dwgPath = weldingPath;
+                    Console.WriteLine($"找到焊接图DWG: {dwgPath}");
                 }
                 else
                 {
                     // 2. CNC路径
                     string cncPath = Path.Combine(directory, "出图", "CNC", fileName + ".dwg");
+                    Console.WriteLine($"检查CNC路径: {cncPath}, 存在: {File.Exists(cncPath)}");
                     if (File.Exists(cncPath))
                     {
                         dwgPath = cncPath;
+                        Console.WriteLine($"找到CNC DWG: {dwgPath}");
                     }
                     else
                     {
                         // 3. 工程图路径（可能有材质子目录）
                         string engDir = Path.Combine(directory, "出图", "工程图");
+                        Console.WriteLine($"检查工程图目录: {engDir}, 存在: {Directory.Exists(engDir)}");
                         if (Directory.Exists(engDir))
                         {
                             // 搜索所有子目录中的DWG文件
                             var dwgFiles = Directory.GetFiles(engDir, fileName + ".dwg", SearchOption.AllDirectories);
+                            Console.WriteLine($"在工程图目录中找到 {dwgFiles.Length} 个DWG文件");
                             if (dwgFiles.Length > 0)
                             {
                                 dwgPath = dwgFiles[0];
+                                Console.WriteLine($"找到工程图DWG: {dwgPath}");
                             }
                         }
                     }
@@ -492,17 +530,22 @@ using System.Linq;
 
                 if (string.IsNullOrEmpty(dwgPath))
                 {
+                    Console.WriteLine($"未找到对应的DWG文件");
+                    Console.WriteLine("请先使用'工程图转DWG'命令转换");
                     swApp.SendMsgToUser("未找到对应的DWG文件，请先使用'工程图转DWG'命令转换");
                     return;
                 }
 
                 filePath = dwgPath;
+                Console.WriteLine($"最终DWG路径: {filePath}");
             }
-            else if (!filePath.ToLower().EndsWith(".dwg"))
+            if (filePath.ToLower().EndsWith(".sldprt") || filePath.ToLower().EndsWith(".prt"))
             {
-                swApp.SendMsgToUser("当前文件不是DWG或DRW文件");
-                return;
+                string partname = Path.GetFileNameWithoutExtension(filePath);
+                string? currentDirectory = Path.GetDirectoryName(filePath);
+                filePath = Path.Combine(currentDirectory, "step", $"{partname}.STEP");
             }
+   
 
             if (!File.Exists(filePath))
             {
@@ -522,6 +565,60 @@ using System.Linq;
         {
             Debug.WriteLine($"复制文件到剪贴板失败: {ex.Message}");
             swApp?.SendMsgToUser($"复制文件到剪贴板失败: {ex.Message}");
+        }
+    }
+
+    [Command(1015, "装配体排版", "将装配体出图文件夹下的DWG文件进行自动排版", "asmdivider", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private void AsmDivider()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+
+            string assemblyPath = swModel.GetPathName();
+            
+            if (string.IsNullOrEmpty(assemblyPath))
+            {
+                swApp.SendMsgToUser("当前装配体尚未保存，请先保存文档");
+                return;
+            }
+
+            string assemblyDir = Path.GetDirectoryName(assemblyPath);
+            if (string.IsNullOrEmpty(assemblyDir))
+            {
+                swApp.SendMsgToUser("无法获取装配体目录");
+                return;
+            }
+
+            string outputFolder = Path.Combine(assemblyDir, "出图");
+            
+            if (!Directory.Exists(outputFolder))
+            {
+                swApp.SendMsgToUser($"出图文件夹不存在: {outputFolder}");
+                return;
+            }
+
+            draw_divider.process_subfolders_with_divider(outputFolder);
+            
+            Debug.WriteLine("装配体排版完成");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"装配体排版失败：{ex.Message}");
+            swApp?.SendMsgToUser($"装配体排版失败：{ex.Message}");
         }
     }
 

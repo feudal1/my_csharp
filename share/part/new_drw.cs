@@ -29,6 +29,8 @@ namespace tools
               swApp.NewDocument(@"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2023\templates\my_a4.drwdot", 0, 0, 0);
                
                swModel = (ModelDoc2)swApp.ActiveDoc;
+               swModel.Extension.SetUserPreferenceInteger((int)swUserPreferenceIntegerValue_e.swDetailingLinearDimPrecision,
+                   (int)swUserPreferenceOption_e.swDetailingDimension, 1);
                   if (swModel.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
                 {
                     Console.WriteLine("错误：无法创建工程图");

@@ -63,6 +63,9 @@ namespace tools
                          string dwgFileName = outputfile + "\\" + swFeature.Name + ".dwg";
                         var swFlatPatt = (FlatPatternFeatureData)swFeature.GetDefinition();
                          swFeature .SetSuppression((int)swFeatureSuppressionAction_e.swUnSuppressFeature);
+                         
+                        
+                         
                          var fixface = (    Face2)swFlatPatt.FixedFace2;
                         var fixface_area=Math.Round( fixface.GetArea()*1000000,2);
                         

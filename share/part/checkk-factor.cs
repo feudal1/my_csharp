@@ -10,12 +10,12 @@ public class checkk_factor
     public static void Process_CustomBendAllowance(string modelname, CustomBendAllowance swCustBend, double BendRadius,
         string FeatureName, double thickness, double angle)
     {
-        var debuct_factor = Math.Round(swCustBend.BendDeduction * 1000.0 / thickness, 2);
-        var a2d = Math.Round((2 * thickness - swCustBend.BendAllowance * 1000.0) / thickness, 2);
+        var debuct_factor = Math.Round(swCustBend.BendDeduction * 1000.0 , 2);
+        var allow_factor = Math.Round( swCustBend.BendAllowance * 1000.0 , 2);
   
 
         // 检查大半径折弯的 K 因子设置 (R>=2mm 时必须使用 Type=2 且 KFactor=0.5)
-        if (BendRadius >= 3)
+        if (BendRadius >= 3.5)
         {
             bool isTypeInvalid = swCustBend.Type != 2;
             bool isKFactorInvalid = swCustBend.Type == 2 && swCustBend.KFactor != 0.5;
@@ -27,24 +27,24 @@ public class checkk_factor
             }
         }
 
-        else if (Math.Abs(angle - 90) > 0.5 && Math.Abs(swCustBend.KFactor - 0.25) > 0.05)
+        else if (Math.Abs(angle - 90) > 0.5 && Math.Abs(swCustBend.KFactor - 0.35) > 0.05)
         {
-            Console.WriteLine($"非 90 度折弯，k 因子错误，{modelname}+{FeatureName},触发条件：角度≠90°且 K 因子≠0.25,当前值：角度={angle}°, K 因子={swCustBend.KFactor}");
+            Console.WriteLine($"非 90 度折弯，k 因子错误，{modelname}+{FeatureName},触发条件：角度≠90°且 K 因子≠0.35,当前值：角度={angle}°, K 因子={swCustBend.KFactor}");
         }
 
-        else if (swCustBend.Type == 4 && (debuct_factor < 1.6 || debuct_factor > 1.82))
+        else if (swCustBend.Type == 4 && (debuct_factor < 1.65*thickness || debuct_factor > 1.75*thickness))
         {
-            Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},触发条件：Type=4 且扣除倍数超出范围 [1.6-1.82],当前值：{debuct_factor}");
+            Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},触发条件：Type=4 且扣除倍数超出范围 [{ 1.65*thickness}-{1.75*thickness}],当前值：{debuct_factor}");
         }
 
 
-        else if (swCustBend.Type == 3 && (a2d < 1.6 || a2d > 1.82))
+        else if (swCustBend.Type == 3 && (allow_factor < 0.25*thickness+2*BendRadius|| allow_factor > 0.35*thickness+2*BendRadius))
         {
-            Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},触发条件：Type=3 且补偿换扣除超出范围 [1.6-1.82],当前值：{a2d}");
+            Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},触发条件：Type=3 且补偿换扣除超出范围 [{0.25*thickness+2*BendRadius}-{0.35*thickness+2*BendRadius}],当前值：{allow_factor}");
         }
-        else if (BendRadius < 3 && swCustBend.Type == 2 && (swCustBend.KFactor < 0.2 || swCustBend.KFactor > 0.3))
+        else if (BendRadius < 3.5 && swCustBend.Type == 2 && Math.Abs(swCustBend.KFactor - 0.35) > 0.05)
         {
-            Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},触发条件：R<{BendRadius}mm 且 Type=2 且 K 因子超出范围 [0.2-0.3],当前值：{swCustBend.KFactor}");
+            Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},触发条件：R<{BendRadius}mm 且 Type=2 且 K 因子超出范围 [0.3-0.4],当前值：{swCustBend.KFactor}");
         }
 
         
@@ -53,7 +53,7 @@ public class checkk_factor
         else
         {
             Debug.Print("      扣除倍数      = " + debuct_factor);
-            Debug.Print("      补偿换扣除 = " + a2d);
+            Debug.Print("      补偿换扣除 = " + allow_factor);
         
             Console.WriteLine($"k因子正确,{modelname}+{FeatureName}");
             return;
@@ -90,6 +90,8 @@ public class checkk_factor
     static public int run(SldWorks swApp, ModelDoc2 swModel)
     {
         var partdoc = (PartDoc)swModel;
+      
+
         var bodys = (object[])partdoc.GetBodies2((int)swBodyType_e.swSolidBody, false);
 
         foreach (var objbody in bodys)

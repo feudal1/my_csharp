@@ -91,8 +91,8 @@ namespace tools
                 }
                 BomTableAnnotation bomTable = activeView.InsertBomTable4(
                         false,                           // 使用默认锚点位置
-                        0.0305 * scaleRatio,                   // X 位置（米）/ 图纸比例
-                        0.025 * scaleRatio,                   // Y 位置（米）/ 图纸比例
+                        0.0505 * scaleRatio,                   // X 位置（米）/ 图纸比例
+                        0.045 * scaleRatio,                   // Y 位置（米）/ 图纸比例
                         (int)swBOMConfigurationAnchorType_e.swBOMConfigurationAnchor_BottomLeft,
                         (int)swBomType_e.swBomType_Indented,
                         configuration,                   // 配置名称

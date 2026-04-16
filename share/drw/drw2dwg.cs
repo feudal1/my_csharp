@@ -12,6 +12,7 @@ namespace tools
         static public string run(ModelDoc2 swModel, SldWorks swApp)
         {
             
+           
             string fullpath = swModel.GetPathName();
            
             string? directory = Path.GetDirectoryName(fullpath);
@@ -51,7 +52,13 @@ namespace tools
 
           
            var drawingDoc = (DrawingDoc)swModel;
-          
+        string slddrt = "c:\\programdata\\solidworks\\solidworks 2023\\lang\\chinese-simplified\\sheetformat\\my_a4.slddrt";
+        // if(File.Exists(slddrt))
+        // {
+        //     bool status = drawingDoc.SetupSheet5("图纸1", 12, 12, 1, 2, true, slddrt, 0.297, 0.21, "默认", true);
+        //    Console.WriteLine($"SetupSheet5 status: {status}");
+        // }
+        
             var swSheet = (Sheet)drawingDoc.IGetCurrentSheet();
             var swViews = (object[])swSheet.GetViews();
             var partDoc = ((SolidWorks.Interop.sldworks.View)swViews[1]).ReferencedDocument;
