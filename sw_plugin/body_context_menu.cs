@@ -116,6 +116,56 @@ namespace SolidWorksAddinStudy
           }
       }
 
+      public string check_k_factor()
+      {
+          ShowOutputWindow();
+          try
+          {
+              Debug.WriteLine("开始检查K因子");
+              if (swApp == null)
+              {
+                  Debug.WriteLine("SolidWorks 未初始化");
+                  return "SolidWorks 未初始化";
+              }
+
+              var acswModel = (ModelDoc2)swApp.ActiveDoc;
+              if (acswModel == null)
+              {
+                  Debug.WriteLine("没有打开的文档");
+                  Console.WriteLine("请先打开一个零件文档");
+                  return "没有打开的文档";
+              }
+
+              var (swModel, body) = get_select_body(acswModel);
+              if (swModel == null || body == null)
+              {
+                  Debug.WriteLine("未选中实体");
+                  Console.WriteLine("请先选中一个实体");
+                  return "未选中实体";
+              }
+
+              // 检查是否为零件文档
+              if (swModel.GetType() != (int)swDocumentTypes_e.swDocPART)
+              {
+                  Debug.WriteLine("当前文档不是零件");
+                  Console.WriteLine("请在零件文档中使用此功能");
+                  return "请在零件文档中使用此功能";
+              }
+
+              checkk_factor.run(swApp, swModel);
+              
+              Debug.WriteLine("K因子检查完成");
+            
+              return "K因子检查完成";
+          }
+          catch (Exception ex)
+          {
+              Debug.WriteLine($"K因子检查失败：{ex.Message}");
+              swApp?.SendMsgToUser($"K因子检查失败：{ex.Message}");
+              return $"K因子检查失败：{ex.Message}";
+          }
+      }
+
        public (ModelDoc2,IBody2) get_select_body(ModelDoc2 swModel)
        {
            var swSelMgr = (SelectionMgr)swModel.SelectionManager;
@@ -156,6 +206,9 @@ namespace SolidWorksAddinStudy
 
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "export_step", "export_selected_to_step", "", "", "");
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "export_step", "export_selected_to_step", "", "", "");
+
+                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "check_k_factor", "check_k_factor", "", "", "");
+                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "check_k_factor", "check_k_factor", "", "", "");
 
                       
             }
