@@ -158,7 +158,7 @@ namespace tools
         {
             if (swApp == null) return;
 
-            benddim.标折弯尺寸(swApp);
+            benddim.AddBendDimensions(swApp);
         }
     }
 }

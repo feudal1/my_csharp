@@ -645,14 +645,14 @@ using System.Linq;
             }
 
             // 调用 benddim 标折弯尺寸
-            benddim.标折弯尺寸(swApp);
+            benddim.AddBendDimensions(swApp);
             
             Debug.WriteLine("折弯尺寸标注完成");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"标折弯尺寸失败：{ex.Message}");
-            swApp?.SendMsgToUser($"标折弯尺寸失败：{ex.Message}");
+            Debug.WriteLine($"AddBendDimensions failed: {ex.Message}");
+            swApp?.SendMsgToUser($"AddBendDimensions failed: {ex.Message}");
         }
     }
 
