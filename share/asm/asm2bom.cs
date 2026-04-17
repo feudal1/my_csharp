@@ -96,42 +96,9 @@ namespace tools
                     var partname = cellText.Trim();
                     swTableAnnotation.set_Text(i, 1, partname.Replace("=", ""));
                     Debug.WriteLine($"partname:{partname}");
-                    var itemnumber=swTableAnnotation.get_Text(i, 0);
-                    
-                    // 安全地获取并解析数量值
-                    string itemCountText = swTableAnnotation.get_Text(i, 2);
-                    int itemcount = 0;
-                    if (!string.IsNullOrEmpty(itemCountText))
-                    {
-                        if (!int.TryParse(itemCountText, out itemcount))
-                        {
-                            Console.WriteLine($"警告：{partname}第 {i} 行第 2 列的数量值 '{itemCountText}' 无法转换为整数，使用默认值 0。");
-                            itemcount = 0;
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"警告：第 {i} 行第 2 列的数量值为空，使用默认值 0。");
-                    }
-                    
-                    if (!string.IsNullOrEmpty(itemnumber) )
-                    {
-                        asmfactor = itemcount;
-                    }
-                    if (string.IsNullOrEmpty(itemnumber) )
-                    {
-                        itemcount = itemcount*asmfactor;
-                    }
-                    
-                    // 累加零件数量到字典
-                    if (!partCountDict.ContainsKey(partname))
-                    {
-                        partCountDict[partname] = 0;
-                    }
-                    partCountDict[partname] += itemcount;
-                    
-                    swTableAnnotation.set_Text( i, 2, itemcount.ToString());
 
+
+                    
                     // 检查是否存在对应的 DWG 文件
                     bool dwgExists = false;
                     if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
@@ -144,7 +111,21 @@ namespace tools
                         {
                             swTableAnnotation.set_Text(i, 4, "已出图");
                         }
-                      
+                        // 安全地获取并解析数量值
+                        string itemCountText = swTableAnnotation.get_Text(i, 2);
+                        int itemcount = 0;
+                        if (!string.IsNullOrEmpty(itemCountText))
+                        {
+                            if (!int.TryParse(itemCountText, out itemcount))
+                            {
+                                Console.WriteLine($"警告：{partname}第 {i} 行第 2 列的数量值 '{itemCountText}' 无法转换为整数，使用默认值 0。");
+                                itemcount = 0;
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine($"警告：第 {i} 行第 2 列的数量值为空，使用默认值 0。");
+                        }
                  
     
      
@@ -187,36 +168,33 @@ namespace tools
                                     continue; // 没找到匹配的组件，跳过当前BOM行
                                 }
                                 ModelDoc2 partDoc = (ModelDoc2)targetComponent.GetModelDoc2();
-                                partDoc.DeleteCustomInfo2("", "数量");
-                                // 使用字典中累加后的数量值
-                                int accumulatedCount = partCountDict.ContainsKey(partname) ? partCountDict[partname] : itemcount;
-                                bool result=partDoc.AddCustomInfo2("数量", (int)swCustomInfoType_e.swCustomInfoText, accumulatedCount.ToString());
-                                Console.WriteLine($"添加数量自定义信息结果: {result},partcount:{accumulatedCount},partname:{partname}");    
-                                if (!issheetmeet){
                                 
+
+
                                 if (partDoc != null && partDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
                                 {
-                                    PartDoc part = (PartDoc)partDoc;
-
-                                    var dimensions = PartDimensionHelper.GetPartDimensions(part);
-                                    
-                                    // 将尺寸格式化为字符串并添加到BOM表
-                                    string dimensionStr = $"{dimensions.length}x{dimensions.width}x{dimensions.height}";
-                                    if(partname!="脚杯座")dimensionStr=dimensionStr.Replace("40x60", "2.0x40x60").Replace("60x40", "2.0x40x60").Replace("40x40", "2.0x40x40");
-                                    if (partname.Contains("方管") )Console.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
-                                    swTableAnnotation.set_Text(i, 3, dimensionStr);
-                                    
-                                    Debug.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
-                                     break; // 找到第一个匹配的就跳出内层循环
-                                }
-                                   
-                                                          } else
+                                    if (!issheetmeet)
                                     {
-                                        // 处理钣金件的下料尺寸
-                                       
-                                        if (partDoc != null && partDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
-                                        {
-                                            PartDoc part = (PartDoc)partDoc;
+                                        PartDoc part = (PartDoc)partDoc;
+
+                                        var dimensions = PartDimensionHelper.GetPartDimensions(part);
+
+                                        // 将尺寸格式化为字符串并添加到BOM表
+                                        string dimensionStr =
+                                            $"{dimensions.length}x{dimensions.width}x{dimensions.height}";
+                                        if (partname != "脚杯座")
+                                            dimensionStr = dimensionStr.Replace("40x60", "2.0x40x60")
+                                                .Replace("60x40", "2.0x40x60").Replace("40x40", "2.0x40x40");
+                                        if (partname.Contains("方管"))
+                                            Console.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
+                                        swTableAnnotation.set_Text(i, 3, dimensionStr);
+
+                                        Debug.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
+                                        break; // 找到第一个匹配的就跳出内层循环
+                                    }
+                                    else
+                                    { 
+                                        PartDoc part = (PartDoc)partDoc;
                                             
                                             // 检查是否为钣金件
                                             Feature swFeature = (Feature)part.FirstFeature();
@@ -277,7 +255,10 @@ namespace tools
                                                                         isSheetMetal = true;
                                                                         
                                                                         string material="SPPC " + thickness.ToString("F2");
-                                                                        if(partname.Contains("不锈钢")&&partname.Contains("sus"))material="SUS " + thickness.ToString("F2");
+                                                                        string  materialdataname = "";
+                                                                        string materialname=part.GetMaterialPropertyName2("Default",
+                                                                            out materialdataname);
+                                                                        if(materialname.Contains("不锈钢")&&materialname.Contains("sus"))material="SUS " + thickness.ToString("F2");
                                                                       partDoc.DeleteCustomInfo2("", "材料");
                                                                         bool materialResult=partDoc.AddCustomInfo2("材料", (int)swCustomInfoType_e.swCustomInfoText, material);
                                                                         Console.WriteLine($"添加材料自定义信息结果: {materialResult},partname:{partname},material:{material}");
@@ -314,12 +295,29 @@ namespace tools
                                             {
                                                 // 非钣金件,使用普通尺寸
                                                 var dimensions = PartDimensionHelper.GetPartDimensions(part);
-                                                dimensionStr = $"{dimensions.length:F1}x{dimensions.width:F1}x{dimensions.height:F1}";
+                                                dimensionStr = $"{dimensions.length:F0}x{dimensions.width:F0}x{dimensions.height:F0}";
+                                                       partDoc.DeleteCustomInfo2("", "规格");
+                                                                        bool materialResult=partDoc.AddCustomInfo2("规格", (int)swCustomInfoType_e.swCustomInfoText, dimensionStr);
                                             }
                                             
                                             swTableAnnotation.set_Text(i, 3, dimensionStr);
-                                        }
                                     }
+                                
+                                    itemcount = itemcount*asmfactor;
+                                    } 
+                             
+                                    else  
+                                    {
+
+                                        asmfactor = itemcount;
+                                    }
+                                    partDoc.DeleteCustomInfo2("", "数量");
+                                    // 使用字典中累加后的数量值
+                                    int accumulatedCount = partCountDict.ContainsKey(partname) ? partCountDict[partname] : itemcount;
+                                    bool result=partDoc.AddCustomInfo2("数量", (int)swCustomInfoType_e.swCustomInfoText, accumulatedCount.ToString());
+                                    Console.WriteLine($"添加数量自定义信息结果: {result},partcount:{accumulatedCount},partname:{partname}");
+
+                                    break;
                                     }
                                 }
                                 
@@ -329,7 +327,18 @@ namespace tools
                             {
                                 Debug.WriteLine($"获取管件 '{partname}' 尺寸时出错: {ex.Message}");
                             }
-                        
+                    
+                    
+                       
+                    
+                            // 累加零件数量到字典
+                            if (!partCountDict.ContainsKey(partname))
+                            {
+                                partCountDict[partname] = 0;
+                            }
+                            partCountDict[partname] += itemcount;
+                    
+                            swTableAnnotation.set_Text( i, 2, itemcount.ToString());
                     }
                   
             
