@@ -48,7 +48,7 @@ namespace tools
                     bomType, 
                     Configuration, 
                     true, 
-                   (int)swNumberingType_e.swNumberingType_None, 
+                    (int)swNumberingType_e.swNumberingType_Detailed, 
                     false
                 );
 
@@ -83,7 +83,7 @@ namespace tools
 
                 // 正向遍历BOM表行
                 int currentRowCount = count;
-                int asmfactor = 0;
+                int asmfactor = 1;
                 for (int i = 1; i <= currentRowCount; i++)
                 {
                 

@@ -61,7 +61,7 @@ namespace cad_tools
         /// <summary>
         /// 从CAD实体创建节点
         /// </summary>
-        private static CADGraphEdgeNode CreateNodeFromEntity(AcadEntity entity, int nodeId)
+        private static CADGraphEdgeNode? CreateNodeFromEntity(AcadEntity entity, int nodeId)
         {
             var node = new CADGraphEdgeNode
             {

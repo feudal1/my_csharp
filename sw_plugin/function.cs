@@ -473,71 +473,32 @@ using System.Linq;
                 return;
             }
 
-            // 如果是DRW文件，需要查找对应的DWG文件
-            if (filePath.ToLower().EndsWith("drw"))
+            // 如果是DRW文件，直接导出DWG
+            if (filePath.ToLower().EndsWith(".slddrw"))
             {
                 Console.WriteLine($"检测到DRW文件: {filePath}");
-                // 使用与 drw2dwg 相同的路径计算逻辑
-                string? directory = Path.GetDirectoryName(filePath);
-                if (string.IsNullOrEmpty(directory))
+                try
                 {
-                    Console.WriteLine("无法获取文件目录");
-                    swApp.SendMsgToUser("无法获取文件目录");
-                    return;
-                }
-
-                string fileName = Path.GetFileNameWithoutExtension(filePath);
-                Console.WriteLine($"文件名: {fileName}");
-                string dwgPath = null;
-
-                // 尝试多个可能的DWG路径
-                // 1. 焊接图路径
-                string weldingPath = Path.Combine(directory, "出图", "焊接图", fileName + ".dwg");
-                Console.WriteLine($"检查焊接图路径: {weldingPath}, 存在: {File.Exists(weldingPath)}");
-                if (File.Exists(weldingPath))
-                {
-                    dwgPath = weldingPath;
-                    Console.WriteLine($"找到焊接图DWG: {dwgPath}");
-                }
-                else
-                {
-                    // 2. CNC路径
-                    string cncPath = Path.Combine(directory, "出图", "CNC", fileName + ".dwg");
-                    Console.WriteLine($"检查CNC路径: {cncPath}, 存在: {File.Exists(cncPath)}");
-                    if (File.Exists(cncPath))
+                    Console.WriteLine($"正在导出DWG...");
+                    string exportedDwgPath = drw2dwg.run(swModel, swApp);
+                    if (!string.IsNullOrEmpty(exportedDwgPath) && File.Exists(exportedDwgPath))
                     {
-                        dwgPath = cncPath;
-                        Console.WriteLine($"找到CNC DWG: {dwgPath}");
+                        filePath = exportedDwgPath;
+                        Console.WriteLine($"导出DWG成功: {filePath}");
                     }
                     else
                     {
-                        // 3. 工程图路径（可能有材质子目录）
-                        string engDir = Path.Combine(directory, "出图", "工程图");
-                        Console.WriteLine($"检查工程图目录: {engDir}, 存在: {Directory.Exists(engDir)}");
-                        if (Directory.Exists(engDir))
-                        {
-                            // 搜索所有子目录中的DWG文件
-                            var dwgFiles = Directory.GetFiles(engDir, fileName + ".dwg", SearchOption.AllDirectories);
-                            Console.WriteLine($"在工程图目录中找到 {dwgFiles.Length} 个DWG文件");
-                            if (dwgFiles.Length > 0)
-                            {
-                                dwgPath = dwgFiles[0];
-                                Console.WriteLine($"找到工程图DWG: {dwgPath}");
-                            }
-                        }
+                        Console.WriteLine($"导出DWG失败");
+                        swApp.SendMsgToUser("导出DWG文件失败");
+                        return;
                     }
                 }
-
-                if (string.IsNullOrEmpty(dwgPath))
+                catch (Exception ex)
                 {
-                    Console.WriteLine($"未找到对应的DWG文件");
-                    Console.WriteLine("请先使用'工程图转DWG'命令转换");
-                    swApp.SendMsgToUser("未找到对应的DWG文件，请先使用'工程图转DWG'命令转换");
+                    Console.WriteLine($"导出DWG异常: {ex.Message}");
+                    swApp.SendMsgToUser($"导出DWG文件失败: {ex.Message}");
                     return;
                 }
-
-                filePath = dwgPath;
-                Console.WriteLine($"最终DWG路径: {filePath}");
             }
             if (filePath.ToLower().EndsWith(".sldprt") || filePath.ToLower().EndsWith(".prt"))
             {
@@ -552,6 +513,10 @@ using System.Linq;
                 swApp.SendMsgToUser($"DWG文件不存在: {filePath}");
                 return;
             }
+
+            // 清空剪贴板
+            System.Windows.Forms.Clipboard.Clear();
+            Debug.WriteLine("已清空剪贴板");
 
             System.Collections.Specialized.StringCollection fileList = new System.Collections.Specialized.StringCollection();
             fileList.Add(filePath);

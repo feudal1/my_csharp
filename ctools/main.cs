@@ -1,377 +1,294 @@
 using System;
-using System.IO;
-using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
-
-using System.Collections.Generic;
-using System.Reflection;
-using System.Linq;
-using System.Text.Json;
-using System.Diagnostics;
-using System.Text;
-using tools;
+using cad_tools;
+using share.nomal;
 
 namespace tools
 {
-    // Windows API 用于设置控制台代码页
-    class ConsoleHelper
+    class Program
     {
-        [DllImport("kernel32.dll")]
-        public static extern bool SetConsoleCP(uint wCodePageID);
-
-        [DllImport("kernel32.dll")]
-        public static extern bool SetConsoleOutputCP(uint wCodePageID);
-    }
-    
-    // 性能监控装饰器属性
-    [System.AttributeUsage(System.AttributeTargets.Method)]
-    class ProfiledAttribute : System.Attribute
-    {
-        public string? Description { get; set; }
-    }
-    
-    public partial class Program
-    {
-        static Dictionary<string, Func<string[], Task>>? asyncCommands;
         static SldWorks? swApp;
         static ModelDoc2? swModel;
-        
-        // 添加公共静态属性，允许外部访问命令字典和 SolidWorks 实例
-        public static Dictionary<string, CommandInfo>? Commands => commandInfos;
-        public static SldWorks? SwApp => swApp;
-        public static ModelDoc2? SwModel => swModel;
-        
-        static Dictionary<string, CommandInfo>? commandInfos;
-               static private DateTime GetBuildTime()
-        {
-            Assembly assembly = Assembly.GetExecutingAssembly();
-            string filePath = assembly.Location;
-            return new FileInfo(filePath).LastWriteTime;
-        }
-        
+        static readonly Dictionary<string, Func<string[], Task>> commands = new();
+
         [STAThread]
         static void Main(string[] args)
         {
-            Console.WriteLine($"ctools build time: {GetBuildTime():MM-dd HH:mm}");
+            swApp = Connect.run();
+            if (swApp == null) { Console.WriteLine("无法连接 SolidWorks"); return; }
+            swModel = (ModelDoc2)swApp.ActiveDoc;
+            SwContext.Instance.Initialize(swApp, swModel);
+
             RegisterCommands();
-            
-                // 将 ctool 的命令注册到全局命令注册中心
-                CommandRegistry.Instance.RegisterAssembly(typeof(Program).Assembly);
-                
-            if (args.Length==0)
+
+            Console.WriteLine("\n输入命令，或描述需求让 AI 处理。输入 help 查看命令，quit 退出。\n");
+
+            while (true)
             {
-                // 连接 SolidWorks
-                swApp = Connect.run();
-                if (swApp == null)
-                {
-                    Console.WriteLine("错误：无法连接到 SolidWorks 应用程序。");
-                    return;
-                }
-                
-                swModel = (ModelDoc2)swApp.ActiveDoc;
-                
-                // 初始化全局 SolidWorks 上下文
-                SwContext.Instance.Initialize(swApp, swModel);
-                
-                // 创建 LLM 循环调用器，注入命令解析器和 SolidWorks 实例解析器
-                LlmLoopCaller loopCaller = new LlmLoopCaller(
-                    // 传入获取命令描述内容的委托（实时生成）
-                    () => GetCommandsDescriptionContent(),
-                    // 命令解析器：从全局注册中心查找命令
-                    commandName => CommandRegistry.Instance.GetCommand(commandName),
-                    // SolidWorks 实例解析器
-                    () => swApp,
-                    // swModel 更新器
-                    (model) => swModel = model
-                );
-           
-                var task = Task.Run(() => loopCaller.InteractiveLoopAsync());
-                task.GetAwaiter().GetResult();
+                Console.Write("> ");
+                var input = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(input)) continue;
+                if (input == "quit") break;
+                if (input == "help") { ShowHelp(); continue; }
+
+                Execute(input);
+            }
+        }
+
+        static void RegisterCommands()
+        {
+            // === 零件命令 ===
+            Register("export", "导出零件为 DWG", _ => Exportdwg.run(swModel!, GetThickness()));
+            Register("export2", "导出零件为 DWG（版本2）", _ => exportdwg2_body.run(swModel!));
+            Register("get_thickness", "获取零件厚度", _ => get_thickness.run(swModel!));
+            Register("get_thickness_folder", "从实体文件夹获取厚度", _ => get_thickness_from_solidfolder.run(swModel!));
+            Register("add_name", "添加零件名到自定义属性", _ => add_name2info.run(swModel!));
+            Register("body_names", "获取所有 body 名称", _ => get_all_body_names.run(swModel!));
+            Register("unsuppress", "解除压缩特征", _ => Unsupress.run(swModel!));
+            Register("open_folder", "打开零件所在文件夹", _ => open_doc_folder.run(swModel!));
+            Register("close_doc", "关闭当前文档", _ => close_current_doc.run(swApp!, swModel!));
+            Register("current_name", "获取当前文档名称", _ => Getcurrentdocname.run(swModel!));
+
+            // === 装配体命令 ===
+            Register("asm2export", "装配体批量导出 DWG", _ => asm2do.run(swApp!, swModel!, (m, a) => exportdwg2_body.run(m)));
+            Register("asm2check", "装配体批量检查展开", _ => asm2do.run(swApp!, swModel!, (m, a) => { checkk_factor.run(a, m); return 0; }));
+            Register("asm2bom", "装配体导出 BOM", _ => asm2bom.run(swApp!, swModel!, false));
+            Register("asm2step", "装配体批量导出 STEP", _ => asm2do.run(swApp!, swModel!, (m, a) => one2step.run(m)));
+            Register("asm2drw", "装配体批量生成工程图", _ => Asm2Drw());
+            Register("all_part_names", "获取所有零件名称", _ => Getallpartname.run(swModel!));
+            Register("select_part", "按名称选择零件", args => select_part_byname.run(swModel!, args.Length > 1 ? args[1] : ""));
+            Register("open_part", "按名称打开零件", args => { if (args.Length > 1) open_part_by_name.run(swApp!, args[1]); });
+            Register("folder2step", "文件夹内零件导出为 STEP", _ => Folder2Step());
+
+            // === 工程图命令 ===
+            Register("new_drw", "新建工程图", _ => { add_name2info.run(swModel!); New_drw.run(swApp!, swModel!); });
+            Register("drw2dwg", "工程图转 DWG", _ => drw2dwg.run(swModel!, swApp!));
+            Register("folderdrw2dwg", "批量转换文件夹工程图为 DWG", _ => FolderDrw2Dwg());
+            Register("analyze_face", "分析选中的面", _ => select_face_recognize.run(swModel!));
+            Register("drw2png", "工程图转 PNG", _ => drw2png.run(swModel!, swApp!));
+            Register("get_edges", "获取工程图所有可见边线", _ => get_all_visable_edge.run(swModel!));
+            Register("bend_dim", "自动标注折弯尺寸", _ => benddim.AddBendDimensions(swApp!));
+
+            // === 综合计划 ===
+            Register("plan1", "综合计划：添加名称+获取厚度+导出+生成工程图", _ =>
+            {
+                add_name2info.run(swModel!);
+                var t = GetThickness();
+                Exportdwg.run(swModel!, t);
+                New_drw.run(swApp!, swModel!);
+            });
+
+            // === 工作日志命令 ===
+            Register("log_add", "添加工作日志 (用法: log_add 工作内容 [备注])", args => AddWorkLog(args));
+            Register("log_pending", "查看未完成的工作日志", _ => ShowPendingLogs());
+            Register("log_done", "标记工作完成 (用法: log_done ID)", args => SetLogComplete(args, true));
+            Register("log_undo", "标记工作未完成 (用法: log_undo ID)", args => SetLogComplete(args, false));
+            Register("log_all", "查看所有工作日志", _ => ShowAllLogs());
+            Register("log_del", "删除工作日志 (用法: log_del ID)", args => DeleteLog(args));
+        }
+
+        static void Register(string name, string desc, Action<string[]> action)
+        {
+            commands[name.ToLower()] = args => { action(args); return Task.CompletedTask; };
+            CommandRegistry.Instance.RegisterCommand(new CommandInfo
+            {
+                Name = name,
+                Description = desc,
+                AsyncAction = args => { action(args); return Task.CompletedTask; }
+            });
+        }
+
+        static void Execute(string input)
+        {
+            var parts = input.Split(' ', 2);
+            var cmd = parts[0].ToLower();
+            var args = parts.Length > 1 ? new[] { parts[0], parts[1] } : new[] { parts[0] };
+
+            if (commands.TryGetValue(cmd, out var action))
+            {
+                try { action(args); }
+                catch (Exception ex) { Console.WriteLine($"错误: {ex.Message}"); }
             }
             else
             {
-                // 如果有命令行参数，显示帮助信息
-                Console.WriteLine("\n欢迎使用 ctools - SolidWorks 智能助手");
-                Console.WriteLine("\n使用方法:");
-                Console.WriteLine("  ctool.exe                  - 启动交互式对话模式");
-                Console.WriteLine("\n在对话中你可以:");
-                Console.WriteLine("  - 直接输入命令名称执行 (如 exportdxf)");
-                Console.WriteLine("  - 用自然语言描述需求 (AI 会自动识别并调用命令)");
-                Console.WriteLine("  - 输入 clear 清空历史、history 查看历史、mode 切换模式");
-                Console.WriteLine("  - 输入 llm 进入纯对话模式、quit/exit 退出程序");
-                Console.WriteLine("\n示例:");
-                Console.WriteLine("  > exportdxf              # 直接执行导出 DXF 命令");
-                Console.WriteLine("  > 导出当前零件           # AI 会识别意图并调用相应命令");
-                Console.WriteLine("\n");
-                ShowHelp();
+                Console.WriteLine($"未知命令: {cmd}");
             }
         }
-        
-        /// <summary>
-        /// 从全局命令注册中心获取命令描述内容（实时生成）
-        /// </summary>
-        static string GetCommandsDescriptionContent()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("=== SolidWorks 自动化命令列表 ===");
-            sb.AppendLine($"更新时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
 
-            sb.AppendLine("3. 执行前需用户确认 (y/n/auto)\n");
-            
-            if (commandInfos != null)
+        static void ShowHelp()
+        {
+            Console.WriteLine("\n可用命令:");
+            foreach (var c in CommandRegistry.Instance.GetAllCommands())
+                Console.WriteLine($"  {c.Value.Name} - {c.Value.Description}");
+            Console.WriteLine();
+        }
+
+        static string GetThickness()
+        {
+            var t = get_thickness.run(swModel!);
+            return t.ToString();
+        }
+
+
+        static void Asm2Drw()
+        {
+            var names = Getallpartname.run(swModel!);
+            if (names == null) return;
+            foreach (var name in names)
             {
-                foreach (var cmd in commandInfos.Values.OrderBy(k => k.Name))
+                open_part_by_name.run(swApp!, name);
+                get_thickness.run(swModel!);
+                New_drw.run(swApp!, swModel!);
+                close_current_doc.run(swApp!, swModel!);
+            }
+        }
+
+        static void Folder2Step()
+        {
+            if (swApp == null) return;
+            var files = FolderPicker.GetFileNamesFromSelectedFolder();
+            if (files == null) return;
+            foreach (var file in files)
+            {
+                if (file.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase))
+                    swModel = (ModelDoc2)swApp.OpenDoc6(file, (int)swDocumentTypes_e.swDocPART, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", 0, 0);
+                else if (file.EndsWith(".SLDASM", StringComparison.OrdinalIgnoreCase))
+                    swModel = (ModelDoc2)swApp.OpenDoc6(file, (int)swDocumentTypes_e.swDocASSEMBLY, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", 0, 0);
+                else continue;
+
+                if (swModel != null)
                 {
-                    sb.AppendLine($"\n【{cmd.Group ?? "默认"}】{cmd.Name} {(cmd.CommandType == CommandType.Async ? "(异步)" : "")}");
-                    if (!string.IsNullOrEmpty(cmd.Description))
-                    {
-                        sb.AppendLine($"    说明：{cmd.Description}");
-                    }
-                    
-                    // 明确标识参数
-                    if (string.IsNullOrEmpty(cmd.Parameters) || cmd.Parameters == "无")
-                    {
-                        sb.AppendLine($"    参数：无");
-                    }
-                    else
-                    {
-                        sb.AppendLine($"    参数：{cmd.Parameters}");
-                    }
+                    swModel.Visible = true;
+                    one2step.run(swModel);
+                    swApp.CloseDoc(swModel.GetTitle());
+                    Console.WriteLine($"已转换: {swModel.GetTitle()}");
                 }
             }
-            
-            return sb.ToString();
         }
-        
 
-       static void ShowHelp()
+        static void FolderDrw2Dwg()
         {
-           Console.WriteLine("\n可用命令:");
-            if (commandInfos != null)
+            if (swApp == null) return;
+            var files = FolderPicker.GetFileNamesFromSelectedFolder();
+            if (files == null) return;
+            foreach (var file in files)
             {
-                foreach (var cmd in commandInfos.Values.OrderBy(k => k.Name))
+                if (!file.EndsWith(".SLDDRW", StringComparison.OrdinalIgnoreCase)) continue;
+                try
                 {
-                   Console.WriteLine($"\n【{cmd.Group}】 {cmd.Name} {(cmd.CommandType == CommandType.Async ? "(异步)" : "")}");
-                    if (!string.IsNullOrEmpty(cmd.Description))
+                    var model = (ModelDoc2)swApp.OpenDoc6(file, (int)swDocumentTypes_e.swDocDRAWING, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", 0, 0);
+                    if (model != null)
                     {
-                       Console.WriteLine($"    说明：{cmd.Description}");
-                    }
-                    if (!string.IsNullOrEmpty(cmd.Parameters))
-                    {
-                       Console.WriteLine($"    参数：{cmd.Parameters}");
+                        drw2dwg.run(model, swApp);
+                        swApp.CloseDoc(model.GetTitle());
+                        Console.WriteLine($"已转换: {file}");
                     }
                 }
+                catch (Exception ex) { Console.WriteLine($"转换失败 {file}: {ex.Message}"); }
             }
-           Console.WriteLine("\n使用方法：<命令> [参数...]");
-           Console.WriteLine("查看帮助：<命令> -h 或 <命令> --help");
-        }
-        
-      static void RegisterCommands()
-        {
-            commandInfos = new Dictionary<string, CommandInfo>();
-            
-            var methods = typeof(Program).GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
-                .Where(m => m.GetCustomAttribute<CommandAttribute>() != null);
-            
-            foreach (var method in methods)
-            {
-                var attr = method.GetCustomAttribute<CommandAttribute>();
-                if (attr != null)
-                {
-                    // 检查返回值类型：必须是 void 或 Task
-                    bool isAsyncTask = method.ReturnType == typeof(Task);
-                    
-                    if (!isAsyncTask && method.ReturnType != typeof(void))
-                    {
-                        Console.WriteLine($"警告：命令 {attr.Name} 的返回类型必须是 void 或 Task，当前为 {method.ReturnType.Name}");
-                        continue;
-                    }
-
-                    // 检查是否有 [Profiled] 属性
-                    var profiledAttr = method.GetCustomAttribute<ProfiledAttribute>();
-                    bool needProfiling = profiledAttr != null;
-
-                    commandInfos[attr.Name] = new CommandInfo
-                    {
-                        Name = attr.Name,
-                        Description = attr.Description,
-                        Parameters = attr.Parameters,
-                        Group = attr.Group,
-                        CommandType = isAsyncTask ? CommandType.Async : CommandType.Sync,  // 标记命令类型
-                        AsyncAction = async (string[] args) => 
-                        {
-                            try
-                            {
-                                if (isAsyncTask)
-                                {
-                                    // 异步方法：直接 await
-                                    if (needProfiling)
-                                    {
-                                        var startTime = DateTime.Now;
-                                        var task = (Task)method.Invoke(null, [args])!;
-                                        await task;
-                                        var elapsed = DateTime.Now - startTime;
-                                        Console.WriteLine($"\n[性能] 命令 '{attr.Name}' 执行耗时：{elapsed.TotalSeconds:F2}s");
-                                    }
-                                    else
-                                    {
-                                        var task = (Task)method.Invoke(null, [args])!;
-                                        await task;
-                                    }
-                                }
-                                else
-                                {
-                                    // 同步方法：直接调用
-                                    if (needProfiling)
-                                    {
-                                        var startTime = DateTime.Now;
-                                        method.Invoke(null, [args]);
-                                        var elapsed = DateTime.Now - startTime;
-                                        Console.WriteLine($"\n[性能] 命令 '{attr.Name}' 执行耗时：{elapsed.TotalSeconds:F2}s");
-                                    }
-                                    else
-                                    {
-                                        method.Invoke(null, [args]);
-                                    }
-                                }
-                            }
-                            catch (TargetInvocationException ex)
-                            {
-                                Console.WriteLine($"\n❌ 执行命令 '{attr.Name}' 出错：{ex.InnerException?.Message}");
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"\n❌ 调用命令 '{attr.Name}' 失败：{ex.Message}");
-                            }
-                        }
-                    };
-                }
-            }
-            
-            asyncCommands = commandInfos.ToDictionary(k => k.Key, v => v.Value.AsyncAction);
         }
 
-        static double CalculateSimilarity(string? query, string? text)
+        // === 工作日志命令实现 ===
+
+        static void AddWorkLog(string[] args)
         {
-            if (string.IsNullOrEmpty(query) || string.IsNullOrEmpty(text))
+            if (args.Length < 2)
             {
-                return 0.0;
-            }
-
-            // 此时 query 和 text 已被断言为非 null
-            string queryLower = query!.ToLower();
-            string textLower = text!.ToLower();
-
-            double ratio = CalculateLevenshteinRatio(queryLower, textLower);
-            
-            if (queryLower.Length > 0 && textLower.Contains(queryLower))
-            {
-                ratio = Math.Max(ratio, 0.9);
-            }
-
-            var querySet = new HashSet<char>(queryLower);
-            var textSet = new HashSet<char>(textLower);
-            var overlap = querySet.Intersect(textSet).Count() / (double)Math.Max(querySet.Count, 1);
-
-            return 0.6 * ratio + 0.4 * overlap;
-        }
-
-        static double CalculateLevenshteinRatio(string s1, string s2)
-        {
-            if (string.IsNullOrEmpty(s1)) return string.IsNullOrEmpty(s2) ? 1.0 : 0.0;
-            if (string.IsNullOrEmpty(s2)) return 0.0;
-
-            int[,] matrix = new int[s1.Length + 1, s2.Length + 1];
-
-            for (int i = 0; i <= s1.Length; i++)
-                matrix[i, 0] = i;
-
-            for (int j = 0; j <= s2.Length; j++)
-                matrix[0, j] = j;
-
-            for (int i = 1; i <= s1.Length; i++)
-            {
-                for (int j = 1; j <= s2.Length; j++)
-                {
-                    int cost = (s1[i - 1] == s2[j - 1]) ? 0 : 1;
-                    matrix[i, j] = Math.Min(
-                        Math.Min(
-                            matrix[i - 1, j] + 1,
-                            matrix[i, j - 1] + 1
-                        ),
-                        matrix[i - 1, j - 1] + cost
-                    );
-                }
-            }
-
-            int distance = matrix[s1.Length, s2.Length];
-            int maxLen = Math.Max(s1.Length, s2.Length);
-            return maxLen > 0 ? 1.0 - (distance / (double)maxLen) : 1.0;
-        }
-
-        static void SearchCommands(string keyword, double threshold = 0.3, int? topK = null)
-        {
-            if (commandInfos == null || commandInfos.Count == 0)
-            {
-                Console.WriteLine("没有可用的命令。");
+                Console.WriteLine("用法: log_add 工作内容 [备注]");
                 return;
             }
 
-            var results = new List<(string Name, string Group, string Description, double Score)>();
-            string keywordLower = (keyword ?? "").ToLower();
+            // 合并参数作为内容，支持空格
+            var input = string.Join(" ", args[1..]);
+            var parts = input.Split("//", 2);
+            var content = parts[0].Trim();
+            var remark = parts.Length > 1 ? parts[1].Trim() : null;
 
-            foreach (var cmd in commandInfos.Values)
+            if (string.IsNullOrWhiteSpace(content))
             {
-                string cmdName = cmd.Name ?? "";
-                string cmdDesc = cmd.Description ?? "";
-                string cmdGroup = cmd.Group ?? "";
-
-                double scoreName = CalculateSimilarity(keyword, cmdName);
-                double scoreDesc = CalculateSimilarity(keyword, cmdDesc);
-                double scoreGroup = CalculateSimilarity(keyword, cmdGroup);
-
-                double score = Math.Max(scoreName, Math.Max(scoreDesc, scoreGroup));
-
-                if (!string.IsNullOrEmpty(keywordLower) && 
-                    (cmdName.ToLower().Contains(keywordLower) || 
-                     cmdDesc.ToLower().Contains(keywordLower) || 
-                     cmdGroup.ToLower().Contains(keywordLower)))
-                {
-                    score = Math.Min(1.0, score + 0.5);
-                }
-
-                if (score >= threshold)
-                {
-                    results.Add((cmdName, cmdGroup, cmdDesc, Math.Round(score, 3)));
-                }
+                Console.WriteLine("工作内容不能为空");
+                return;
             }
 
-            results.Sort((a, b) => b.Score.CompareTo(a.Score));
-
-            if (topK.HasValue && topK.Value > 0)
-            {
-                results = results.Take(topK.Value).ToList();
-            }
-
-            Console.WriteLine($"\n找到 {results.Count} 个匹配的命令：\n");
-            foreach (var result in results)
-            {
-                Console.WriteLine($" {result.Name} (相似度：{result.Score})");
-                Console.WriteLine($"    分组：{result.Group}");
-                if (!string.IsNullOrEmpty(result.Description))
-                {
-                    Console.WriteLine($"    说明：{result.Description}");
-                }
-                
-                // 显示参数信息
-                var cmd = commandInfos.Values.FirstOrDefault(c => c.Name == result.Name);
-                if (cmd != null && !string.IsNullOrEmpty(cmd.Parameters))
-                {
-                    Console.WriteLine($"    参数：{cmd.Parameters}");
-                }
-            }
+            var id = WorkLogManager.AddLog(content, remark);
+            Console.WriteLine($"已添加工作日志 [ID:{id}]: {content}");
+            if (remark != null)
+                Console.WriteLine($"备注: {remark}");
         }
 
+        static void ShowPendingLogs()
+        {
+            var logs = WorkLogManager.GetPendingLogs();
+            if (logs.Count == 0)
+            {
+                Console.WriteLine("暂无未完成的工作日志");
+                return;
+            }
+
+            Console.WriteLine("\n=== 未完成的工作日志 ===");
+            Console.WriteLine($"{"ID",-4} {"创建时间",-20} 工作内容");
+            Console.WriteLine(new string('-', 80));
+            foreach (var log in logs)
+            {
+                Console.WriteLine($"{log.Id,-4} {log.CreatedAt:yyyy-MM-dd HH:mm:ss}  {log.Content}");
+                if (!string.IsNullOrEmpty(log.Remark))
+                    Console.WriteLine($"     备注: {log.Remark}");
+            }
+            Console.WriteLine($"\n共 {logs.Count} 条未完成日志\n");
+        }
+
+        static void ShowAllLogs()
+        {
+            var logs = WorkLogManager.GetAllLogs();
+            if (logs.Count == 0)
+            {
+                Console.WriteLine("暂无工作日志");
+                return;
+            }
+
+            Console.WriteLine("\n=== 所有工作日志 ===");
+            Console.WriteLine($"{"ID",-4} {"状态",-6} {"创建时间",-20} 工作内容");
+            Console.WriteLine(new string('-', 80));
+            foreach (var log in logs)
+            {
+                var status = log.IsCompleted ? "[完成]" : "[待办]";
+                Console.WriteLine($"{log.Id,-4} {status,-6} {log.CreatedAt:yyyy-MM-dd HH:mm:ss}  {log.Content}");
+                if (!string.IsNullOrEmpty(log.Remark))
+                    Console.WriteLine($"     备注: {log.Remark}");
+            }
+            Console.WriteLine($"\n共 {logs.Count} 条日志\n");
+        }
+
+        static void SetLogComplete(string[] args, bool completed)
+        {
+            if (args.Length < 2 || !int.TryParse(args[1], out var id))
+            {
+                Console.WriteLine($"用法: {args[0]} ID");
+                return;
+            }
+
+            var action = completed ? "完成" : "未完成";
+            if (WorkLogManager.SetComplete(id, completed))
+                Console.WriteLine($"已将工作日志 [ID:{id}] 标记为{action}");
+            else
+                Console.WriteLine($"未找到工作日志 [ID:{id}]");
+        }
+
+        static void DeleteLog(string[] args)
+        {
+            if (args.Length < 2 || !int.TryParse(args[1], out var id))
+            {
+                Console.WriteLine("用法: log_del ID");
+                return;
+            }
+
+            if (WorkLogManager.DeleteLog(id))
+                Console.WriteLine($"已删除工作日志 [ID:{id}]");
+            else
+                Console.WriteLine($"未找到工作日志 [ID:{id}]");
+        }
     }
 }

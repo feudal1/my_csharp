@@ -610,7 +610,7 @@ namespace tools
             SaveMessagesToDisk(messages);
             SaveLongTermMemoryLog(response ?? $"ToolCall: {JsonConvert.SerializeObject(toolCalls)}");
                     
-            return (response, toolCalls);
+            return (response ?? "", toolCalls);
         }
         
         /// <summary>
@@ -1120,6 +1120,10 @@ EndStream:
             }
             
             var message = choices[0]["message"];
+            if (message == null)
+            {
+                return ("", null);
+            }
             var toolCalls = message["tool_calls"] as JArray;
             
             if (toolCalls != null && toolCalls.Count > 0)
