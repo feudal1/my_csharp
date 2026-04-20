@@ -16,13 +16,21 @@ public class one2step
                 
         // 获取当前文件所在目录
         string? currentDirectory = Path.GetDirectoryName(fullPath);
-        // 获取父文件夹
-        string? parentDirectory = Directory.GetParent(currentDirectory)?.FullName;
-        // 获取当前文件夹名称作为文件名
         
         // 构建完整的输出路径
-        string outputPath = Path.Combine(currentDirectory, "step", $"{partname}.STEP");
-                 string outputDirectory = Path.GetDirectoryName(outputPath);
+        string outputPath;
+        
+        // 如果零件名称包含"方管"，导出到特殊文件夹
+        if (partname.Contains("方管"))
+        {
+            outputPath = Path.Combine(currentDirectory, "方管_step", $"{partname}.STEP");
+        }
+        else
+        {
+            outputPath = Path.Combine(currentDirectory, "step", $"{partname}.STEP");
+        }
+        
+        string outputDirectory = Path.GetDirectoryName(outputPath);
         if (!Directory.Exists(outputDirectory))
         {
             Directory.CreateDirectory(outputDirectory);

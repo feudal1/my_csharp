@@ -12,10 +12,10 @@ public class checkk_factor
     {
         var debuct_factor = Math.Round(swCustBend.BendDeduction * 1000.0 , 2);
         var allow_factor = Math.Round( swCustBend.BendAllowance * 1000.0 , 2);
-  
+        double bendradius_limit = 6;
 
         // 检查大半径折弯的 K 因子设置 (R>=2mm 时必须使用 Type=2 且 KFactor=0.5)
-        if (BendRadius >= 3.5)
+        if (BendRadius >= bendradius_limit)
         {
             bool isTypeInvalid = swCustBend.Type != 2;
             bool isKFactorInvalid = swCustBend.Type == 2 && swCustBend.KFactor != 0.5;
@@ -42,7 +42,7 @@ public class checkk_factor
         {
             Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},触发条件：Type=3 且补偿换扣除超出范围 [{0.25*thickness+2*BendRadius}-{0.35*thickness+2*BendRadius}],当前值：{allow_factor}");
         }
-        else if (BendRadius < 3.5 && swCustBend.Type == 2 && Math.Abs(swCustBend.KFactor - 0.35) > 0.05)
+        else if (BendRadius < bendradius_limit && swCustBend.Type == 2 && Math.Abs(swCustBend.KFactor - 0.35) > 0.05)
         {
             Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},触发条件：R<{BendRadius}mm 且 Type=2 且 K 因子超出范围 [0.3-0.4],当前值：{swCustBend.KFactor}");
         }
@@ -89,56 +89,77 @@ public class checkk_factor
 
     static public int run(SldWorks swApp, ModelDoc2 swModel)
     {
-        var partdoc = (PartDoc)swModel;
-      
-
-        var bodys = (object[])partdoc.GetBodies2((int)swBodyType_e.swSolidBody, false);
-
-        foreach (var objbody in bodys)
+        // 检查是否为零件文档
+        if (swModel.GetType() != (int)swDocumentTypes_e.swDocPART)
         {
-            var body = (Body2)objbody;
-
-            double thickness = 0;
-            object[] features = (object[])body.GetFeatures();
-            foreach (object objFeature in features)
-            {
- 
-                Feature swFeature = (Feature)objFeature;
-                switch (swFeature.GetTypeName())
-                {
-                    case "SheetMetal":
-                        SheetMetalFeatureData swSheetMetalData = (SheetMetalFeatureData)swFeature.GetDefinition();
-                        thickness = swSheetMetalData.Thickness * 1000;
-                        break;
-                }
-                var swSubFeat = (Feature)swFeature.GetFirstSubFeature();
- 
-                while ((swSubFeat != null))
-                {
-                    
-                    switch (swSubFeat.GetTypeName())
-                    {
-                      
-                            
-                         
-                        case "OneBend":
-                            Process_OneBend(swApp, swModel, swSubFeat, thickness);
-
-                            break;
-
-                    }
-
-                    swSubFeat = (Feature)swSubFeat.GetNextSubFeature();
-                }
-
-
-
-
-
-
-
-            }
+            Console.WriteLine($"跳过非零件文档: {swModel.GetTitle()} (类型: {swModel.GetType()})");
+            return 0;
         }
-        return 0;
+        
+        var partdoc = (PartDoc)swModel;
+        string modelName = swModel.GetTitle();
+        
+        // 优化1: 先快速检查是否为钣金件，避免不必要的遍历
+        bool isSheetMetal = false;
+        double thickness = 0;
+        
+        Feature firstFeature = (Feature)partdoc.FirstFeature();
+        while (firstFeature != null)
+        {
+            if (firstFeature.GetTypeName2() == "SheetMetal")
+            {
+                SheetMetalFeatureData swSheetMetalData = (SheetMetalFeatureData)firstFeature.GetDefinition();
+                thickness = swSheetMetalData.Thickness * 1000;
+                isSheetMetal = true;
+                break;
+            }
+            firstFeature = (Feature)firstFeature.GetNextFeature();
+        }
+        
+        // 如果不是钣金件，直接返回
+        if (!isSheetMetal)
+        {
+            Debug.WriteLine($"零件 '{modelName}' 不是钣金件，跳过检查");
+            return 0;
+        }
+        
+        Debug.WriteLine($"开始检查钣金件: {modelName}, 厚度: {thickness}mm");
+        
+        // 优化2: 只遍历一次特征树，找到所有折弯特征
+        int bendCount = 0;
+        int errorCount = 0;
+        
+        Feature swFeature = (Feature)partdoc.FirstFeature();
+        while (swFeature != null)
+        {
+           
+                Feature swSubFeat = (Feature)swFeature.GetFirstSubFeature();
+                
+                while (swSubFeat != null)
+                {
+                    // 只处理 OneBend 特征
+                    if (swSubFeat.GetTypeName() == "OneBend")
+                    {
+                        bendCount++;
+                        try
+                        {
+                            Process_OneBend(swApp, swModel, swSubFeat, thickness);
+                        }
+                        catch (Exception ex)
+                        {
+                            errorCount++;
+                            Console.WriteLine($"检查折弯特征 '{swSubFeat.Name}' 时出错: {ex.Message}");
+                        }
+                    }
+                    
+                    swSubFeat = (Feature)swSubFeat.GetNextSubFeature();
+               
+            }
+            
+            swFeature = (Feature)swFeature.GetNextFeature();
+        }
+        
+        Debug.WriteLine($"零件 '{modelName}' 检查完成: 共 {bendCount} 个折弯特征, {errorCount} 个错误");
+        return bendCount;
     }
 }

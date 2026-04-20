@@ -61,7 +61,7 @@ using System.Linq;
             swApp?.SendMsgToUser($"工程图转换失败：{ex.Message}");
         }
     }
-    [Command(1004, "导出展开", "导出展开", "exportdwg", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
+    [Command(1002, "导出展开", "导出展开", "exportdwg", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
     private void exportdwg()
     {
         try
@@ -96,7 +96,7 @@ using System.Linq;
         }
     }
   
-    [Command(1002, "工程图转 DWG", "将当前工程图转换为 DWG 格式并打开", "drw2dwg", (int)swDocumentTypes_e.swDocDRAWING)]
+    [Command(1003, "工程图转 DWG", "将当前工程图转换为 DWG 格式并打开", "drw2dwg", (int)swDocumentTypes_e.swDocDRAWING)]
     private void Drw2Dwg()
     {
         try
@@ -118,7 +118,9 @@ using System.Linq;
            
             // 使用 share 项目中的 drw2dwg 方法转换 DWG
             var dwgFileName = drw2dwg.run(swModel, swApp);
-
+            
+            // 更新任务窗格中对应零件的出图状态
+            UpdatePartDrawnStatusFromDrawing(swModel);
 
            
             Debug.WriteLine($"工程图已转换为 DWG: {dwgFileName}");
@@ -130,7 +132,7 @@ using System.Linq;
         }
     }
 
-    [Command(1003, "新建工程图", "为当前零件创建工程图并添加视图", "newdrw", (int)swDocumentTypes_e.swDocPART)]
+    [Command(1004, "新建工程图", "为当前零件创建工程图并添加视图", "newdrw", (int)swDocumentTypes_e.swDocPART)]
     private void NewDrw()
     {
         try
@@ -231,7 +233,7 @@ using System.Linq;
             swApp?.SendMsgToUser($"工程图dwg打开失败：{ex.Message}");
         }
     }
-    [Command(1012, "打开 DWG工程图cad", "打开 DWG工程图", "opendwgcad", (int)swDocumentTypes_e.swDocDRAWING)]
+    [Command(1007, "打开 DWG工程图cad", "打开 DWG工程图", "opendwgcad", (int)swDocumentTypes_e.swDocDRAWING)]
     private void Opencad()
     {
         try
@@ -263,7 +265,7 @@ using System.Linq;
             swApp?.SendMsgToUser($"工程图dwg打开失败：{ex.Message}");
         }
     }
-    [Command(1009, "新建装配体工程图", "为当前装配体创建工程图并添加视图和 BOM 表", "asmnewdrw", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [Command(1008, "新建装配体工程图", "为当前装配体创建工程图并添加视图和 BOM 表", "asmnewdrw", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void AsmNewDrw()
     {
         try
@@ -292,8 +294,8 @@ using System.Linq;
             swApp?.SendMsgToUser($"装配体工程图创建失败：{ex.Message}");
         }
     }
-    [Command(1007, "装配体批量检查展开", "检查装配体中所有零件的展开情况", "asm2check", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
-    private void Asm2check()
+    [Command(1009, "装配体批量检查展开", "检查装配体中所有零件的展开情况", "asm2check", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private async void Asm2check()
     {
         try
         {
@@ -311,11 +313,110 @@ using System.Linq;
                 swApp.SendMsgToUser("请先打开一个装配体文档");
                 return;
             }
-           
-            asm2do.run(swApp, swModel, (model, app) => {
-                checkk_factor.run(app, model);
-                return 0;
-            });
+            
+            // 优化：直接从任务窗格获取钣金零件列表，避免遍历整个装配体
+            var taskPaneForm = AddinStudy.GetTaskPaneForm();
+            if (taskPaneForm == null || taskPaneForm.GetPartCount() == 0)
+            {
+                Debug.WriteLine("任务窗格为空，先执行 BOM 导出...");
+                swApp.SendMsgToUser("请先执行“装配体导出 BOM”命令生成零件列表");
+                return;
+            }
+            
+            // 获取所有钣金件
+            var sheetMetalParts = taskPaneForm.GetPartsByType("钣金件");
+            if (sheetMetalParts.Count == 0)
+            {
+                Debug.WriteLine("未找到钣金件");
+                swApp.SendMsgToUser("当前装配体中没有钣金件");
+                return;
+            }
+            
+            Console.WriteLine($"\n=== 开始检查 {sheetMetalParts.Count} 个钣金件的展开情况 ===");
+            swApp.CommandInProgress = true;
+            
+            AssemblyDoc swAssembly = (AssemblyDoc)swModel;
+            object[] allComponents = (object[])swAssembly.GetComponents(false);
+            
+            // 构建组件名称到组件的映射
+            Dictionary<string, Component2> componentMap = new Dictionary<string, Component2>(StringComparer.OrdinalIgnoreCase);
+            foreach (object compObj in allComponents)
+            {
+                Component2 component = (Component2)compObj;
+                string componentName = component.Name2;
+                
+                // 去掉"/"号及之前的文字
+                int slashIndex = componentName.LastIndexOf('/');
+                if (slashIndex >= 0 && slashIndex < componentName.Length - 1)
+                {
+                    componentName = componentName.Substring(slashIndex + 1);
+                }
+                
+                // 去掉末尾的"-数字"部分
+                int lastDashIndex = componentName.LastIndexOf('-');
+                if (lastDashIndex > 0 && lastDashIndex < componentName.Length - 1)
+                {
+                    string suffix = componentName.Substring(lastDashIndex + 1);
+                    if (int.TryParse(suffix, out _))
+                    {
+                        componentName = componentName.Substring(0, lastDashIndex);
+                    }
+                }
+                
+                if (!componentMap.ContainsKey(componentName))
+                {
+                    componentMap[componentName] = component;
+                }
+            }
+            
+            int checkedCount = 0;
+            int errorCount = 0;
+            
+            // 只检查钣金件
+            foreach (var partInfo in sheetMetalParts)
+            {
+                string partName = partInfo.PartName;
+                
+                if (componentMap.TryGetValue(partName, out Component2? foundComponent))
+                {
+                    try
+                    {
+                        // 关键：设置 Visible = true 来触发文档加载（参考 asm2do 的做法）
+                        ModelDoc2 partDoc = (ModelDoc2)foundComponent.GetModelDoc2();
+                        
+                        if (partDoc != null)
+                        {
+                            partDoc.Visible = true;  // 触发文档加载
+                            
+                            checkk_factor.run(swApp, partDoc);
+                            checkedCount++;
+                            
+                            // 检查完后关闭文档，释放资源
+                            string docPath = partDoc.GetPathName();
+                            if (!string.IsNullOrEmpty(docPath))
+                            {
+                                swApp.CloseDoc(docPath);
+                            }
+                        }
+                        else
+                        {
+                            Debug.WriteLine($"警告：无法获取零件 '{partName}' 的文档对象");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        Console.WriteLine($"检查零件 '{partName}' 时出错: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine($"警告：未找到组件 '{partName}'");
+                }
+            }
+            
+            Console.WriteLine($"\n=== 检查完成 ===");
+            Console.WriteLine($"共检查 {checkedCount} 个钣金件，{errorCount} 个错误");
         }
         catch (Exception ex)
         {
@@ -355,7 +456,7 @@ using System.Linq;
         }
     }
 
-     [Command(1008, "装配体导出 BOM", "生成装配体 BOM 表并导出为 Excel", "asm2bom-pipe", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [Command(1011, "装配体导出 BOM", "生成装配体 BOM 表并导出为 Excel（自动检测钣金件）", "asm2bom", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private async void Asm2bom()
     {
         try
@@ -375,7 +476,7 @@ using System.Linq;
                 return;
             }
            
-            await asm2bom.run(swApp, swModel, false);
+            await asm2bom.run(swApp, swModel,false);
         }
         catch (Exception ex)
         {
@@ -383,8 +484,9 @@ using System.Linq;
             swApp?.SendMsgToUser($"装配体 BOM 导出失败：{ex.Message}");
         }
     }
-         [Command(1014, "装配体导出 BOM", "生成装配体 BOM 表并导出为 Excel", "asm2bom-sheet", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
-    private async void Asm2bom_sheet()
+
+    [Command(1012, "零件导出 BOM", "生成零件 BOM 表并导出为 Excel", "asm2bom_part", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private async void Part2bom()
     {
         try
         {
@@ -399,7 +501,7 @@ using System.Linq;
             if (swModel == null)
             {
                 Debug.WriteLine("没有打开的文档");
-                swApp.SendMsgToUser("请先打开一个装配体文档");
+                swApp.SendMsgToUser("请先打开一个零件文档");
                 return;
             }
            
@@ -407,12 +509,12 @@ using System.Linq;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"装配体 BOM 导出失败：{ex.Message}");
-            swApp?.SendMsgToUser($"装配体 BOM 导出失败：{ex.Message}");
+            Debug.WriteLine($"零件 BOM 导出失败：{ex.Message}");
+            swApp?.SendMsgToUser($"零件 BOM 导出失败：{ex.Message}");
         }
     }
 
-    [Command(1011, "批量导出 STEP", "批量导出装配体中所有零件为 STEP 格式", "asm2step", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [Command(1013, "批量导出 STEP", "批量导出装配体中所有零件为 STEP 格式", "asm2step", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void AsmBatchStep()
     {
         try
@@ -445,7 +547,46 @@ using System.Linq;
             swApp?.SendMsgToUser($"装配体 STEP 导出失败：{ex.Message}");
         }
     }
-    [Command(1013, "复制DWG文件到剪贴板", "将当前文档对应的DWG文件路径复制到剪贴板", "copyfile", 0, ShowOutputWindow = true)]
+
+    [Command(1020, "导出方管 STEP", "仅导出装配体中的方管零件为 STEP 格式", "asm2squaretube", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private void AsmSquareTubeStep()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+           
+            // 使用过滤器只处理包含"方管"的零件
+            string[] filterKeywords = new string[] { "方管" };
+            asm2do.run(swApp, swModel, (model, app) =>
+            {
+                return one2step.run(model);
+            }, filterKeywords);
+            
+            Debug.WriteLine("方管件 STEP 导出完成");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"方管 STEP 导出失败：{ex.Message}");
+            swApp?.SendMsgToUser($"方管 STEP 导出失败：{ex.Message}");
+        }
+    }
+
+
+  
+    [Command(1015, "复制DWG文件到剪贴板", "将当前文档对应的DWG文件路径复制到剪贴板", "copyfile", 0, ShowOutputWindow = true)]
     private void CopyFileToClipboard()
     {
         try
@@ -533,7 +674,7 @@ using System.Linq;
         }
     }
 
-    [Command(1015, "装配体排版", "将装配体出图文件夹下的DWG文件进行自动排版", "asmdivider", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [Command(1014, "装配体排版", "将装配体出图文件夹下的DWG文件进行自动排版", "asmdivider", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void AsmDivider()
     {
         try
@@ -621,8 +762,86 @@ using System.Linq;
         }
     }
 
+    [Command(1019, "显示零件状态窗格", "显示或隐藏零件处理状态任务窗格", "show_part_status", 0, ShowOutputWindow = false)]
+    private void ShowPartStatusPane()
+    {
+        try
+        {
+            var taskPaneForm = AddinStudy.GetTaskPaneForm();
+            
+            if (taskPaneForm != null)
+            {
+                // 如果窗体已最小化，恢复正常
+                if (taskPaneForm.WindowState == FormWindowState.Minimized)
+                {
+                    taskPaneForm.WindowState = FormWindowState.Normal;
+                }
+                
+                // 确保窗体可见并置顶
+                taskPaneForm.Show();
+                taskPaneForm.BringToFront();
+                
+                swApp?.SendMsgToUser("零件处理状态窗格已显示");
+                Debug.WriteLine("零件处理状态窗格已显示");
+            }
+            else
+            {
+                swApp?.SendMsgToUser("任务窗格未初始化，请重启插件");
+                Debug.WriteLine("任务窗格未初始化");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"显示任务窗格失败: {ex.Message}");
+            swApp?.SendMsgToUser($"显示任务窗格失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 从工程图更新对应零件的出图状态
+    /// </summary>
+    private void UpdatePartDrawnStatusFromDrawing(ModelDoc2 drawingModel)
+    {
+        try
+        {
+            var taskPaneForm = AddinStudy.GetTaskPaneForm();
+            if (taskPaneForm == null) return;
+            
+            // 获取工程图引用的零件/装配体名称
+            DrawingDoc drawingDoc = (DrawingDoc)drawingModel;
+            object[] views = (object[])drawingDoc.GetViews();
+            
+            if (views == null || views.Length == 0) return;
+            
+            // 遍历所有视图
+            foreach (object viewObj in views)
+            {
+                object[] viewArray = (object[])viewObj;
+                foreach (object vObj in viewArray)
+                {
+                    SolidWorks.Interop.sldworks.View view = (SolidWorks.Interop.sldworks.View)vObj;
+                    ModelDoc2 referencedModel = (ModelDoc2)view.ReferencedDocument;
+                    
+                    if (referencedModel != null)
+                    {
+                        string refPath = referencedModel.GetPathName();
+                        if (!string.IsNullOrEmpty(refPath))
+                        {
+                            string partName = System.IO.Path.GetFileNameWithoutExtension(refPath);
+                            
+                            // 更新任务窗格中的出图状态
+                            taskPaneForm.UpdatePartDrawnStatus(partName, "已出图");
+                            Debug.WriteLine($"已更新零件 '{partName}' 的出图状态");
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"更新出图状态失败: {ex.Message}");
+        }
+    }
 
 
-
-    
 }}

@@ -15,7 +15,7 @@ namespace tools
         static readonly Dictionary<string, Func<string[], Task>> commands = new();
 
         [STAThread]
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             swApp = Connect.run();
             if (swApp == null) { Console.WriteLine("无法连接 SolidWorks"); return; }
@@ -34,7 +34,7 @@ namespace tools
                 if (input == "quit") break;
                 if (input == "help") { ShowHelp(); continue; }
 
-                Execute(input);
+                await Execute(input);
             }
         }
 
@@ -55,7 +55,8 @@ namespace tools
             // === 装配体命令 ===
             Register("asm2export", "装配体批量导出 DWG", _ => asm2do.run(swApp!, swModel!, (m, a) => exportdwg2_body.run(m)));
             Register("asm2check", "装配体批量检查展开", _ => asm2do.run(swApp!, swModel!, (m, a) => { checkk_factor.run(a, m); return 0; }));
-            Register("asm2bom", "装配体导出 BOM", _ => asm2bom.run(swApp!, swModel!, false));
+            Register("asm2bom", "装配体导出 BOM", async _ => await asm2bom.run(swApp!, swModel!,false));
+            Register("asm2bomp", "装配体导出零件 BOM", async _ => await asm2bom.run(swApp!, swModel!, true));
             Register("asm2step", "装配体批量导出 STEP", _ => asm2do.run(swApp!, swModel!, (m, a) => one2step.run(m)));
             Register("asm2drw", "装配体批量生成工程图", _ => Asm2Drw());
             Register("all_part_names", "获取所有零件名称", _ => Getallpartname.run(swModel!));
@@ -101,7 +102,18 @@ namespace tools
             });
         }
 
-        static void Execute(string input)
+        static void Register(string name, string desc, Func<string[], Task> asyncAction)
+        {
+            commands[name.ToLower()] = asyncAction;
+            CommandRegistry.Instance.RegisterCommand(new CommandInfo
+            {
+                Name = name,
+                Description = desc,
+                AsyncAction = asyncAction
+            });
+        }
+
+        static async Task Execute(string input)
         {
             var parts = input.Split(' ', 2);
             var cmd = parts[0].ToLower();
@@ -109,7 +121,7 @@ namespace tools
 
             if (commands.TryGetValue(cmd, out var action))
             {
-                try { action(args); }
+                try { await action(args); }
                 catch (Exception ex) { Console.WriteLine($"错误: {ex.Message}"); }
             }
             else

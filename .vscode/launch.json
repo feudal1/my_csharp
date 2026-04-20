@@ -2,25 +2,73 @@
     "version": "0.2.0",
     "configurations": [
         {
-            // Use IntelliSense to find out which attributes exist for C# debugging
-            // Use hover for the description of the existing attributes
-            // For further information visit https://github.com/dotnet/vscode-csharp/blob/main/debugger-launchjson.md
-            "name": ".NET Core Launch (console)",
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
-            // If you have changed target frameworks, make sure to update the program path.
+            "name": ".NET Core Launch (console)",
             "program": "${workspaceFolder}/ctools/bin/Debug/net9.0-windows/ctool.dll",
             "args": [],
-            "cwd": "${workspaceFolder}/ctools",
-            // For more information about the 'console' field, see https://aka.ms/VSCode-CS-LaunchJson-Console
-            "console": "internalConsole",
-            "stopAtEntry": false
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "internalConsoleOptions": "openOnSessionStart",
+            "pipeTransport": {
+                "pipeCwd": "${workspaceFolder}",
+                "pipeProgram": "cmd",
+                "pipeArgs": ["/c"],
+                "debuggerPath": "C:\\netcoredbg\\netcoredbg.exe",
+                "debuggerArgs": ["--interpreter=vscode"],
+                "quoteArgs": true
+            }
         },
         {
-            "name": ".NET Core Attach",
+            "name": "sw_plugin: Launch SolidWorks (C:\\Program Files)",
             "type": "coreclr",
-            "request": "attach"
+            "request": "launch",
+            "preLaunchTask": "build-sw-plugin",
+            "program": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SLDWORKS.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/sw_plugin",
+            "stopAtEntry": false,
+            "pipeTransport": {
+                "pipeCwd": "${workspaceFolder}",
+                "pipeProgram": "cmd",
+                "pipeArgs": ["/c"],
+                "debuggerPath": "C:\\netcoredbg\\netcoredbg.exe",
+                "debuggerArgs": ["--interpreter=vscode"],
+                "quoteArgs": true
+            }
+        },
+        {
+            "name": "sw_plugin: Launch SolidWorks (E:\\sw)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-sw-plugin",
+            "program": "E:\\sw\\SOLIDWORKS\\SLDWORKS.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/sw_plugin",
+            "stopAtEntry": false,
+            "pipeTransport": {
+                "pipeCwd": "${workspaceFolder}",
+                "pipeProgram": "cmd",
+                "pipeArgs": ["/c"],
+                "debuggerPath": "C:\\netcoredbg\\netcoredbg.exe",
+                "debuggerArgs": ["--interpreter=vscode"],
+                "quoteArgs": true
+            }
+        },
+        {
+            "name": "sw_plugin: Attach to SolidWorks",
+            "type": "coreclr",
+            "request": "attach",
+            "processName": "SLDWORKS",
+            "pipeTransport": {
+                "pipeCwd": "${workspaceFolder}",
+                "pipeProgram": "cmd",
+                "pipeArgs": ["/c"],
+                "debuggerPath": "C:\\netcoredbg\\netcoredbg.exe",
+                "debuggerArgs": ["--interpreter=vscode"],
+                "quoteArgs": true
+            }
         }
     ]
 }

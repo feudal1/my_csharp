@@ -32,7 +32,7 @@ namespace tools
                 var mathUtils = swApp.IGetMathUtility();
 
                 int count = 0;
-                double offset = 0.05;
+                double offset = 0.005;
                 
                 // 全局已标注面组合集合，用于跨折弯去重
                 var dimensionedPairs = new HashSet<string>();

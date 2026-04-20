@@ -4,15 +4,30 @@ using SolidWorks.Interop.swconst;
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.IO;
 
 namespace tools
 {
     public class asm2bom
     {
-        static public async Task<int> run(SldWorks swApp, ModelDoc2 swModel,bool issheetmeet)
+        // 任务窗格更新回调
+        public static Action<List<object>>? TaskPaneUpdateCallback { get; set; }
+        
+        /// <summary>
+        /// 运行BOM导出
+        /// </summary>
+        /// <param name="swApp">SolidWorks应用</param>
+        /// <param name="swModel">模型文档</param>
+        /// <param name="partbom">是否为零件BOM</param>
+        /// <param name="exportExcel">是否导出并打开Excel（默认true）</param>
+        static public async Task<int> run(SldWorks swApp, ModelDoc2 swModel, bool partbom, bool exportExcel = true)
         {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             try
             {
+                swApp.CommandInProgress = true;
+                Console.WriteLine("=== 开始BOM导出 ===");
                 // 确保是装配体
                 if (swModel.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
                 {
@@ -38,9 +53,16 @@ namespace tools
                 tableTemplate = "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\lang\\chinese-simplified\\bom-standard.sldbomtbt";
                 
                 string Configuration = swApp.GetActiveConfigurationName(swModel.GetPathName());
-                // 插入缩进式 BOM 表
-                bomType = (int)swBomType_e.swBomType_Indented;
-                
+                // 根据 partbom 参数选择 BOM 类型
+                if (partbom)
+                {
+                    bomType = (int)swBomType_e.swBomType_PartsOnly;  // 仅零件式 BOM
+                }
+                else
+                {
+                    bomType = (int)swBomType_e.swBomType_TopLevelOnly;  // 顶层装配体 BOM（包含子装配体）
+                }
+              
                 swBOMAnnotation = (BomTableAnnotation)swModelDocExt.InsertBomTable3(
                     tableTemplate, 
                     1260, 
@@ -67,8 +89,9 @@ namespace tools
                 Console.WriteLine($"deleteresult:{deleteresult},colunmname{colunmname}");
                 swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,2,"规格尺寸",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
                 swTableAnnotation.SetColumnTitle(2,"单套数量");
-                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,3,"是否出图",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
-                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,4,"总数",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
+                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,3,"类别",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
+                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,4,"是否出图",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
+                swTableAnnotation.InsertColumn2((int)swTableItemInsertPosition_e.swTableItemInsertPosition_After,5,"总数",(int)swInsertTableColumnWidthStyle_e.swInsertColumn_DefaultWidth);
                 var count = swTableAnnotation.RowCount;
    
                 // 获取零件文档 - 使用 GetComponents 方法遍历所有组件来查找
@@ -80,7 +103,61 @@ namespace tools
                 
                 // 创建字典用于累加每个零件的数量
                 Dictionary<string, int> partCountDict = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                
+                // 优化：预先构建组件名称到组件的映射字典，避免每次都遍历所有组件
+                Console.WriteLine($"正在构建组件索引，共 {allComponents.Length} 个组件...");
+                Dictionary<string, Component2> componentMap = new Dictionary<string, Component2>(StringComparer.OrdinalIgnoreCase);
+                foreach (object compObj in allComponents)
+                {
+                    Component2 component = (Component2)compObj;
+                    string componentName = component.Name2;
+                    
+                    // 去掉"/"号及之前的文字，只保留后面的部分
+                    int slashIndex = componentName.LastIndexOf('/');
+                    if (slashIndex >= 0 && slashIndex < componentName.Length - 1)
+                    {
+                        componentName = componentName.Substring(slashIndex + 1);
+                    }
+                    
+                    // 去掉末尾的"-数字"部分（例如："零件名-1" -> "零件名"）
+                    int lastDashIndex = componentName.LastIndexOf('-');
+                    if (lastDashIndex > 0 && lastDashIndex < componentName.Length - 1)
+                    {
+                        string suffix = componentName.Substring(lastDashIndex + 1);
+                        // 检查后缀是否为纯数字
+                        if (int.TryParse(suffix, out _))
+                        {
+                            componentName = componentName.Substring(0, lastDashIndex);
+                        }
+                    }
+                    
+                    // 存储到字典中（如果已存在，保留第一个）
+                    if (!componentMap.ContainsKey(componentName))
+                    {
+                        componentMap[componentName] = component;
+                    }
+                }
+                Console.WriteLine($"组件索引构建完成，共 {componentMap.Count} 个唯一组件，耗时: {stopwatch.ElapsedMilliseconds}ms");
 
+                // 优化1: 预先扫描DWG文件，构建快速查找字典
+                Console.WriteLine("正在预扫描DWG文件...");
+                Dictionary<string, bool> dwgFileCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+                {
+                    string[] allDwgFiles = Directory.GetFiles(directory, "*.dwg", SearchOption.AllDirectories);
+                    foreach (string dwgFile in allDwgFiles)
+                    {
+                        string fileNameWithoutExt = Path.GetFileNameWithoutExtension(dwgFile);
+                        // 存储原始名称和清理后的名称
+                        dwgFileCache[fileNameWithoutExt] = true;
+                        
+                        // 也存储清理后的版本（去除空格、连字符等）
+                        string cleanName = fileNameWithoutExt.Replace(" ", "").Replace("-", "").Replace("_", "");
+                        dwgFileCache[cleanName] = true;
+                    }
+                    Console.WriteLine($"预扫描完成，共找到 {allDwgFiles.Length} 个DWG文件，耗时: {stopwatch.ElapsedMilliseconds}ms");
+                }
+                
                 // 正向遍历BOM表行
                 int currentRowCount = count;
                 int asmfactor = 1;
@@ -99,17 +176,23 @@ namespace tools
 
 
                     
-                    // 检查是否存在对应的 DWG 文件
+                    // 优化2: 使用缓存的DWG文件字典快速查找
                     bool dwgExists = false;
-                    if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+                    if (dwgFileCache.ContainsKey(partname))
                     {
-                        dwgExists = FindDwgFile(directory, partname);
+                        dwgExists = true;
+                    }
+                    else
+                    {
+                        // 尝试清理后的名称匹配
+                        string cleanPartName = partname.Replace(" ", "").Replace("-", "").Replace("_", "");
+                        dwgExists = dwgFileCache.ContainsKey(cleanPartName);
                     }
                     
          
                         if (dwgExists)
                         {
-                            swTableAnnotation.set_Text(i, 4, "已出图");
+                            swTableAnnotation.set_Text(i, 5, "已出图");
                         }
                         // 安全地获取并解析数量值
                         string itemCountText = swTableAnnotation.get_Text(i, 2);
@@ -132,197 +215,224 @@ namespace tools
                     
                             try
                             {
-                        
-                                // 遍历所有组件，按名称查找目标组件
-                                foreach (object compObj in allComponents)
+                                // 优化：直接从字典中查找组件，而不是遍历所有组件
+                                if (componentMap.TryGetValue(partname, out Component2? foundComponent))
                                 {
-                                    Component2 component = (Component2)compObj;
-                                    string componentName = component.Name2;
-                                    
-                                    // 去掉"/"号及之前的文字，只保留后面的部分
-                                    int slashIndex = componentName.LastIndexOf('/');
-                                    if (slashIndex >= 0 && slashIndex < componentName.Length - 1)
+                                    targetComponent = foundComponent;
+                               
+                                    if (targetComponent == null)
                                     {
-                                        componentName = componentName.Substring(slashIndex + 1);
+                                        continue; // 没找到匹配的组件，跳过当前BOM行
                                     }
                                     
-                                    // 去掉末尾的"-数字"部分（例如："零件名-1" -> "零件名"）
-                                    int lastDashIndex = componentName.LastIndexOf('-');
-                                    if (lastDashIndex > 0 && lastDashIndex < componentName.Length - 1)
-                                    {
-                                        string suffix = componentName.Substring(lastDashIndex + 1);
-                                        // 检查后缀是否为纯数字
-                                        if (int.TryParse(suffix, out _))
-                                        {
-                                            componentName = componentName.Substring(0, lastDashIndex);
-                                        }
-                                    }
-                                    
-                                    // 比较组件名称（不区分大小写）
-                                    if (componentName.Equals(partname, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        targetComponent = component;
-                                       
-                                        if (targetComponent == null)
-                                {
-                                    continue; // 没找到匹配的组件，跳过当前BOM行
-                                }
-                                ModelDoc2 partDoc = (ModelDoc2)targetComponent.GetModelDoc2();
+                                    ModelDoc2 partDoc = (ModelDoc2)targetComponent.GetModelDoc2();
                                 
 
 
                                 if (partDoc != null && partDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
                                 {
-                                    if (!issheetmeet)
+                                    PartDoc part = (PartDoc)partDoc;
+                                    
+                                    // 优化3: 批量获取自定义属性，减少COM调用次数
+                                    Feature swFeature = (Feature)part.FirstFeature();
+                                    bool isSheetMetal = false;
+                                    double thickness = 0;
+                                    double boundingBoxLength = 0;
+                                    double boundingBoxWidth = 0;
+                                    
+                                    // 先尝试从切割清单直接获取属性
+                                    Feature cutListFolder = null;
+                                    while (swFeature != null)
                                     {
-                                        PartDoc part = (PartDoc)partDoc;
-
-                                        var dimensions = PartDimensionHelper.GetPartDimensions(part);
-
-                                        // 将尺寸格式化为字符串并添加到BOM表
-                                        string dimensionStr =
-                                            $"{dimensions.length}x{dimensions.width}x{dimensions.height}";
-                                        if (partname != "脚杯座")
-                                            dimensionStr = dimensionStr.Replace("40x60", "2.0x40x60")
-                                                .Replace("60x40", "2.0x40x60").Replace("40x40", "2.0x40x40");
-                                        if (partname.Contains("方管"))
-                                            Console.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
-                                        swTableAnnotation.set_Text(i, 3, dimensionStr);
-
-                                        Debug.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
-                                        break; // 找到第一个匹配的就跳出内层循环
+                                        if (swFeature.GetTypeName2() == "SolidBodyFolder")
+                                        {
+                                            cutListFolder = swFeature;
+                                            break;
+                                        }
+                                        swFeature = (Feature)swFeature.GetNextFeature();
                                     }
-                                    else
-                                    { 
-                                        PartDoc part = (PartDoc)partDoc;
+                                    
+                                    if (cutListFolder != null)
+                                    {
+                                        BodyFolder swBodyFolder = (BodyFolder)cutListFolder.GetSpecificFeature2();
+                                        swBodyFolder.SetAutomaticCutList(true);
+                                        swBodyFolder.SetAutomaticUpdate(true);
+                                        
+                                        Feature subfeat = (Feature)cutListFolder.GetFirstSubFeature();
+                                        
+                                        while (subfeat != null)
+                                        {
+                                            IBodyFolder solidBodyFolder = (IBodyFolder)subfeat.GetSpecificFeature2();
                                             
-                                            // 检查是否为钣金件
-                                            Feature swFeature = (Feature)part.FirstFeature();
-                                            bool isSheetMetal = false;
-                                            double thickness = 0;
-                                            double boundingBoxLength = 0;
-                                            double boundingBoxWidth = 0;
+                                            var manger = subfeat.CustomPropertyManager;
+                                            object vPropNames = null;
+                                            object vPropTypes = null;
+                                            object vPropValues = null;
+                                            object resolved = null;
+                                            object linkProp = null;
                                             
-                                            while (swFeature != null)
+                                            manger.GetAll3(ref vPropNames, ref vPropTypes, ref vPropValues, ref resolved, ref linkProp);
+                                            
+                                            if (vPropValues != null && vPropNames != null)
                                             {
-                                               
+                                                string[] propValues = (string[])vPropValues;
+                                                string[] propNames = (string[])vPropNames;
                                                 
-                                                // 查找SolidBodyFolder以获取切割清单信息
-                                                if (swFeature.GetTypeName2() == "SolidBodyFolder")
+                                                for (int j = 0; j < propNames.Length; j++)
                                                 {
-                                                    BodyFolder swBodyFolder = (BodyFolder)swFeature.GetSpecificFeature2();
-                                                    swBodyFolder.SetAutomaticCutList(true);
-                                                    swBodyFolder.SetAutomaticUpdate(true);
-                                                    
-                                                    Feature subfeat = (Feature)swFeature.GetFirstSubFeature();
-                                                    
-                                                    while (subfeat != null)
+                                                    if ((propNames[j] == "边界框长度" || propNames[j] == "Bounding Box Length") && 
+                                                        double.TryParse(propValues[j], out double length))
                                                     {
-                                                        IBodyFolder solidBodyFolder = (IBodyFolder)subfeat.GetSpecificFeature2();
-                                                        
-                                                        var manger = subfeat.CustomPropertyManager;
-                                                        object vPropNames = null;
-                                                        object vPropTypes = null;
-                                                        object vPropValues = null;
-                                                        object resolved = null;
-                                                        object linkProp = null;
-                                                        
-                                                        manger.GetAll3(ref vPropNames, ref vPropTypes, ref vPropValues, ref resolved, ref linkProp);
-                                                        
-                                                        if (vPropValues != null && vPropNames != null)
+                                                        boundingBoxLength = length;
+                                                    }
+                                                    if ((propNames[j] == "边界框宽度" || propNames[j] == "Bounding Box Width") && 
+                                                        double.TryParse(propValues[j], out double width))
+                                                    {
+                                                        boundingBoxWidth = width;
+                                                    }
+                                                    if ((propNames[j] == "钣金厚度" || propNames[j] == "Thickness") && 
+                                                        double.TryParse(propValues[j], out double thicknessValue))
+                                                    {
+                                                        thickness = thicknessValue;
+                                                        if (thicknessValue > 0.1) 
                                                         {
-                                                            string[] propValues = (string[])vPropValues;
-                                                            string[] propNames = (string[])vPropNames;
+                                                            isSheetMetal = true;
                                                             
-                                                            for (int j = 0; j < propNames.Length; j++)
-                                                            {
-                                                                if ((propNames[j] == "边界框长度" || propNames[j] == "Bounding Box Length") && 
-                                                                    double.TryParse(propValues[j], out double length))
-                                                                {
-                                                                    boundingBoxLength = length;
-                                                                }
-                                                                if ((propNames[j] == "边界框宽度" || propNames[j] == "Bounding Box Width") && 
-                                                                    double.TryParse(propValues[j], out double width))
-                                                                {
-                                                                    boundingBoxWidth = width;
-                                                                }
-                                                                if ((propNames[j] == "钣金厚度" || propNames[j] == "Thickness") && 
-                                                                    double.TryParse(propValues[j], out double thicknessValue))
-                                                                {
-                                                                    thickness = thicknessValue;
-                                                                    if (thicknessValue > 0.1) 
-                                                                    {
-                                                                        isSheetMetal = true;
-                                                                        
-                                                                        string material="SPPC " + thickness.ToString("F2");
-                                                                        string  materialdataname = "";
-                                                                        string materialname=part.GetMaterialPropertyName2("Default",
-                                                                            out materialdataname);
-                                                                        if(materialname.Contains("不锈钢")&&materialname.Contains("sus"))material="SUS " + thickness.ToString("F2");
-                                                                      partDoc.DeleteCustomInfo2("", "材料");
-                                                                        bool materialResult=partDoc.AddCustomInfo2("材料", (int)swCustomInfoType_e.swCustomInfoText, material);
-                                                                        Console.WriteLine($"添加材料自定义信息结果: {materialResult},partname:{partname},material:{material}");
-                                                                    }
-                                                                }
-                                                            }
+                                                            string material="SPPC " + thickness.ToString("F2");
+                                                            string  materialdataname = "";
+                                                            string materialname=part.GetMaterialPropertyName2("Default",
+                                                                out materialdataname);
+                                                            if(materialname.Contains("不锈钢")&&materialname.Contains("sus"))material="SUS " + thickness.ToString("F2");
+                                                          partDoc.DeleteCustomInfo2("", "材料");
+                                                            bool materialResult=partDoc.AddCustomInfo2("材料", (int)swCustomInfoType_e.swCustomInfoText, material);
+                                                            Console.WriteLine($"添加材料自定义信息结果: {materialResult},partname:{partname},material:{material}");
                                                         }
-                                                        
-                                                        subfeat = (Feature)subfeat.GetNextSubFeature();
                                                     }
                                                 }
-                                                
-                                                swFeature = (Feature)swFeature.GetNextFeature();
                                             }
                                             
-                                            string dimensionStr = "";
+                                            subfeat = (Feature)subfeat.GetNextSubFeature();
+                                        }
+                                    }
+                                    
+                                    string dimensionStr = "";
+                                    string categoryStr = ""; // 类别：钣金件/管件/其他
+                                    
+                                    if (isSheetMetal && boundingBoxLength > 0 && boundingBoxWidth > 0)
+                                    {
+                                        // 使用切割清单中的边界框尺寸作为下料尺寸
+                                        double maxLength = Math.Max(boundingBoxLength, boundingBoxWidth);
+                                        double minLength = Math.Min(boundingBoxLength, boundingBoxWidth);
+                                        // 将尺寸放入数组并排序
+                                        double[] dimensions = new double[] { maxLength, minLength, thickness };
+                                        Array.Sort(dimensions);
+                                        dimensionStr = $"{FormatDimension(dimensions[0])}x{FormatDimension(dimensions[1])}x{FormatDimension(dimensions[2])}";
+                                        categoryStr = "钣金件";
+                                        
+                                        Debug.WriteLine($"钣金件 '{partname}' 下料尺寸: {dimensionStr}");
+                                    }
+                                    else if (isSheetMetal)
+                                    {
+                                        // 如果没有找到切割清单信息，使用普通边界框
+                                        var dimensions = PartDimensionHelper.GetPartDimensions(part);
+                                        dimensionStr = $"000";
+                                        categoryStr = "钣金件展开错误";
+                                    }
+                                    else
+                                    {
+                                        // 非钣金件，使用组件边界框获取尺寸（避免打开零件文档）
+                                        // 注意：GetBox 对未加载的子装配体可能返回 null
+                                        object boxObj = targetComponent.GetBox(false, false);
+                                        
+                                        if (boxObj != null && boxObj is double[])
+                                        {
+                                            double[] box = (double[])boxObj;
+                                            // box 包含 6 个值：[X1, Y1, Z1, X2, Y2, Z2]
+                                            double length = Math.Abs(box[3] - box[0]);
+                                            double width = Math.Abs(box[4] - box[1]);
+                                            double height = Math.Abs(box[5] - box[2]);
                                             
-                                            if (isSheetMetal && boundingBoxLength > 0 && boundingBoxWidth > 0)
+                                            // 将米转换为毫米
+                                            length *= 1000;
+                                            width *= 1000;
+                                            height *= 1000;
+                                            
+                                            // 将尺寸放入数组并排序
+                                            double[] dimensions = new double[] { length, width, height };
+                                            Array.Sort(dimensions);
+                                            
+                                            dimensionStr = FormatDimension(dimensions[0]) + "x" + FormatDimension(dimensions[1]) + "x" + FormatDimension(dimensions[2]);
+                                            
+                                            if (partname != "脚杯座")
+                                                dimensionStr = dimensionStr.Replace("40x60", "2.0x40x60")
+                                                    .Replace("60x40", "2.0x40x60").Replace("40x40", "2.0x40x40");
+                                        }
+                                        else
+                                        {
+                                            // 如果 GetBox 失败（可能是未加载的子装配体），回退到打开零件文档的方式
+                                            Console.WriteLine($"警告：组件 '{partname}' GetBox 返回 null，尝试打开文档获取尺寸");
+                                            var dimensions = PartDimensionHelper.GetPartDimensions(part);
+                                            
+                                            // 将尺寸放入数组并排序
+                                            double[] dims = new double[] { dimensions.length, dimensions.width, dimensions.height };
+                                            Array.Sort(dims);
+                                            dimensionStr = $"{FormatDimension(dims[0])}x{FormatDimension(dims[1])}x{FormatDimension(dims[2])}";
+                                            if (partname != "脚杯座")
+                                                dimensionStr = dimensionStr.Replace("40x60", "2.0x40x60")
+                                                    .Replace("60x40", "2.0x40x60").Replace("40x40", "2.0x40x40");
+                                        }
+                                        
+                                        // 判断是否为管件或装配体
+                                        if (partname.Contains("方管") || partname.Contains("圆管") || partname.Contains("管材"))
+                                        {
+                                            categoryStr = "管件";
+                                            Console.WriteLine($"管件 '{partname}' 尺寸: {dimensionStr}");
+                                        }
+                                        else
+                                        {
+                                            // 检查是否有子组件，判断是否为子装配体
+                                            object[] children = (object[])targetComponent.GetChildren();
+                                            if (children != null && children.Length > 0)
                                             {
-                                                // 使用切割清单中的边界框尺寸作为下料尺寸
-                                                double maxLength = Math.Max(boundingBoxLength, boundingBoxWidth);
-                                                double minLength = Math.Min(boundingBoxLength, boundingBoxWidth);
-                                                dimensionStr = $"{maxLength}x{minLength}x{thickness}";
-                                                
-                                                Debug.WriteLine($"钣金件 '{partname}' 下料尺寸: {dimensionStr}");
-                                            }
-                                            else if (isSheetMetal)
-                                            {
-                                                // 如果没有找到切割清单信息，使用普通边界框
-                                                var dimensions = PartDimensionHelper.GetPartDimensions(part);
-                                                dimensionStr = $"{dimensions.length:F1}x{dimensions.width:F1}x{thickness:F1}";
+                                                categoryStr = "组合件";
+                                                Console.WriteLine($"组合件 '{partname}' 尺寸: {dimensionStr}");
                                             }
                                             else
                                             {
-                                                // 非钣金件,使用普通尺寸
-                                                var dimensions = PartDimensionHelper.GetPartDimensions(part);
-                                                dimensionStr = $"{dimensions.length:F0}x{dimensions.width:F0}x{dimensions.height:F0}";
-                                                       partDoc.DeleteCustomInfo2("", "规格");
-                                                                        bool materialResult=partDoc.AddCustomInfo2("规格", (int)swCustomInfoType_e.swCustomInfoText, dimensionStr);
+                                                categoryStr = "其他";
                                             }
-                                            
-                                            swTableAnnotation.set_Text(i, 3, dimensionStr);
+                                        }
                                     }
+                                    
+                                    // 优化4: 批量设置表格文本，减少COM调用
+                                    List<(int row, int col, string text)> pendingUpdates = new List<(int, int, string)>();
+                                    
+                                    pendingUpdates.Add((i, 3, dimensionStr));
+                                    pendingUpdates.Add((i, 4, categoryStr));
                                 
                                     itemcount = itemcount*asmfactor;
-                                    } 
-                             
-                                    else  
-                                    {
-
-                                        asmfactor = itemcount;
-                                    }
+                                    pendingUpdates.Add((i, 2, itemcount.ToString()));
+                                    
                                     partDoc.DeleteCustomInfo2("", "数量");
                                     // 使用字典中累加后的数量值
                                     int accumulatedCount = partCountDict.ContainsKey(partname) ? partCountDict[partname] : itemcount;
                                     bool result=partDoc.AddCustomInfo2("数量", (int)swCustomInfoType_e.swCustomInfoText, accumulatedCount.ToString());
                                     Console.WriteLine($"添加数量自定义信息结果: {result},partcount:{accumulatedCount},partname:{partname}");
-
-                                    break;
+                                    
+                                    // 批量应用表格更新
+                                    foreach (var update in pendingUpdates)
+                                    {
+                                        swTableAnnotation.set_Text(update.row, update.col, update.text);
                                     }
+                                }
+                                else
+                                {
+                                    // 没有在字典中找到匹配的组件
+                                    Console.WriteLine($"警告：未找到组件 '{partname}'");
                                 }
                                 
                                 
-                            }
+                            }}
                             catch (Exception ex)
                             {
                                 Debug.WriteLine($"获取管件 '{partname}' 尺寸时出错: {ex.Message}");
@@ -337,8 +447,6 @@ namespace tools
                                 partCountDict[partname] = 0;
                             }
                             partCountDict[partname] += itemcount;
-                    
-                            swTableAnnotation.set_Text( i, 2, itemcount.ToString());
                     }
                   
             
@@ -347,16 +455,31 @@ namespace tools
                
                 
                 string excelpath = swModel.GetPathName().Replace("SLDASM", "xlsx");
+                if (partbom) excelpath = swModel.GetPathName().Replace(".SLDASM", "_part.xlsx");
                 
-                swBOMAnnotation.SaveAsExcel(excelpath, false, true);
-            swBOMAnnotation=swBOMAnnotation2;
-                // 启动 Excel 文件
-                ProcessStartInfo startInfo = new ProcessStartInfo(excelpath)
+                // 只在需要导出Excel时保存
+                if (exportExcel)
                 {
-                    UseShellExecute = true
-                };
-                Process.Start(startInfo);
+                    swBOMAnnotation.SaveAsExcel(excelpath, false, true);
+                }
+            
+            swBOMAnnotation=swBOMAnnotation2;
                 
+                // 提取 BOM 数据并更新任务窗格
+                UpdateTaskPaneFromBom(swTableAnnotation);
+                
+                // 只在需要时启动 Excel 文件
+                if (exportExcel)
+                {
+                    ProcessStartInfo startInfo = new ProcessStartInfo(excelpath)
+                    {
+                        UseShellExecute = true
+                    };
+                    Process.Start(startInfo);
+                }
+                
+                Console.WriteLine($"\n=== BOM导出完成 ===");
+                Console.WriteLine($"总耗时: {stopwatch.ElapsedMilliseconds}ms ({stopwatch.Elapsed.TotalSeconds:F2}秒)");
                 return 0;
             }
             catch (Exception ex)
@@ -368,45 +491,81 @@ namespace tools
         }
 
         /// <summary>
-        /// 在文件夹及其子文件夹中查找是否存在与零件名匹配的 DWG 文件
+        /// 格式化尺寸值，如果能取整则返回整数形式，否则保留一位小数
         /// </summary>
-        /// <param name="directory">要搜索的目录</param>
-        /// <param name="partName">零件名称</param>
-        /// <returns>如果找到返回 true，否则返回 false</returns>
-        static private bool FindDwgFile(string directory, string partName)
+        /// <param name="value">尺寸值</param>
+        /// <returns>格式化后的字符串</returns>
+        static private string FormatDimension(double value)
+        {
+            if (Math.Abs(value - Math.Round(value)) < 1e-9)
+            {
+                return ((int)Math.Round(value)).ToString();
+            }
+            else
+            {
+                return value.ToString("F1");
+            }
+        }
+        
+        /// <summary>
+        /// 从 BOM 表提取数据并更新任务窗格
+        /// </summary>
+        static private void UpdateTaskPaneFromBom(TableAnnotation swTableAnnotation)
         {
             try
             {
-                // 搜索当前目录和所有子目录中的 DWG 文件（包括 sus、CNC 等材质文件夹）
-                string[] dwgFiles = Directory.GetFiles(directory, "*.dwg", SearchOption.AllDirectories);
+                Debug.WriteLine("开始提取BOM数据...");
+                var bomDataList = new List<object>();
                 
-                foreach (string dwgFile in dwgFiles)
+                int rowCount = swTableAnnotation.RowCount;
+                Debug.WriteLine($"BOM表总行数: {rowCount}");
+                
+                // 从第1行开始遍历（跳过表头）
+                for (int i = 1; i < rowCount; i++)
                 {
-                    string fileNameWithoutExt = Path.GetFileNameWithoutExtension(dwgFile);
+                    string partName = swTableAnnotation.get_Text(i, 1)?.Trim() ?? "";
+                    string quantity = swTableAnnotation.get_Text(i, 2)?.Trim() ?? "";
+                    string dimension = swTableAnnotation.get_Text(i, 3)?.Trim() ?? "";
+                    string partType = swTableAnnotation.get_Text(i, 4)?.Trim() ?? "";
+                    string isDrawn = swTableAnnotation.get_Text(i, 5)?.Trim() ?? "未出图";
                     
-                    // 精确匹配（不区分大小写）
-                    if (fileNameWithoutExt.Equals(partName, StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrEmpty(partName))
                     {
-                        return true;
-                    }
-                    
-                    // 宽松匹配：去除空格、连字符等特殊字符后比较
-                    string cleanPartName = partName.Replace(" ", "").Replace("-", "").Replace("_", "");
-                    string cleanFileName = fileNameWithoutExt.Replace(" ", "").Replace("-", "").Replace("_", "");
-                  
-                    if (cleanFileName.Equals(cleanPartName, StringComparison.OrdinalIgnoreCase))
-                    {
-                       
-                        return true;
+                        bomDataList.Add(new
+                        {
+                            PartName = partName,
+                            PartType = partType,
+                            Dimension = dimension,
+                            IsDrawn = isDrawn,
+                            Quantity = quantity
+                        });
+                        Debug.WriteLine($"提取零件 [{i}]: {partName}, 类型: {partType}, 尺寸: {dimension}, 出图: {isDrawn}");
                     }
                 }
                 
-                return false;
+                Debug.WriteLine($"共提取 {bomDataList.Count} 个零件，准备调用回调...");
+                
+                // 通过回调更新任务窗格
+                if (TaskPaneUpdateCallback != null)
+                {
+                    Debug.WriteLine("TaskPaneUpdateCallback不为null，开始调用");
+                    TaskPaneUpdateCallback?.Invoke(bomDataList);
+                    Debug.WriteLine("TaskPaneUpdateCallback调用完成");
+                }
+                else
+                {
+                    Debug.WriteLine("警告: TaskPaneUpdateCallback为null，无法更新任务窗格");
+                }
+                
+                if (bomDataList.Count > 0)
+                {
+                    Debug.WriteLine($"已提取 {bomDataList.Count} 个零件数据，准备更新任务窗格");
+                }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"搜索 DWG 文件时出错：{ex.Message}");
-                return false;
+                Debug.WriteLine($"更新任务窗格失败: {ex.Message}");
+                Debug.WriteLine($"异常堆栈: {ex.StackTrace}");
             }
         }
     }
