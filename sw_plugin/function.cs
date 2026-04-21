@@ -315,8 +315,8 @@ using System.Linq;
             }
             
             // 优化：直接从任务窗格获取钣金零件列表，避免遍历整个装配体
-            var taskPaneForm = AddinStudy.GetTaskPaneForm();
-            if (taskPaneForm == null || taskPaneForm.GetPartCount() == 0)
+            var taskPaneControl = AddinStudy.GetTaskPaneControl();
+            if (taskPaneControl == null || taskPaneControl.GetPartCount() == 0)
             {
                 Debug.WriteLine("任务窗格为空，先执行 BOM 导出...");
                 swApp.SendMsgToUser("请先执行“装配体导出 BOM”命令生成零件列表");
@@ -324,7 +324,7 @@ using System.Linq;
             }
             
             // 获取所有钣金件
-            var sheetMetalParts = taskPaneForm.GetPartsByType("钣金件");
+            var sheetMetalParts = taskPaneControl.GetPartsByType("钣金件");
             if (sheetMetalParts.Count == 0)
             {
                 Debug.WriteLine("未找到钣金件");
@@ -762,40 +762,7 @@ using System.Linq;
         }
     }
 
-    [Command(1019, "显示零件状态窗格", "显示或隐藏零件处理状态任务窗格", "show_part_status", 0, ShowOutputWindow = false)]
-    private void ShowPartStatusPane()
-    {
-        try
-        {
-            var taskPaneForm = AddinStudy.GetTaskPaneForm();
-            
-            if (taskPaneForm != null)
-            {
-                // 如果窗体已最小化，恢复正常
-                if (taskPaneForm.WindowState == FormWindowState.Minimized)
-                {
-                    taskPaneForm.WindowState = FormWindowState.Normal;
-                }
-                
-                // 确保窗体可见并置顶
-                taskPaneForm.Show();
-                taskPaneForm.BringToFront();
-                
-                swApp?.SendMsgToUser("零件处理状态窗格已显示");
-                Debug.WriteLine("零件处理状态窗格已显示");
-            }
-            else
-            {
-                swApp?.SendMsgToUser("任务窗格未初始化，请重启插件");
-                Debug.WriteLine("任务窗格未初始化");
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"显示任务窗格失败: {ex.Message}");
-            swApp?.SendMsgToUser($"显示任务窗格失败: {ex.Message}");
-        }
-    }
+
 
     /// <summary>
     /// 从工程图更新对应零件的出图状态
@@ -804,8 +771,8 @@ using System.Linq;
     {
         try
         {
-            var taskPaneForm = AddinStudy.GetTaskPaneForm();
-            if (taskPaneForm == null) return;
+            var taskPaneControl = AddinStudy.GetTaskPaneControl();
+            if (taskPaneControl == null) return;
             
             // 获取工程图引用的零件/装配体名称
             DrawingDoc drawingDoc = (DrawingDoc)drawingModel;
@@ -830,7 +797,7 @@ using System.Linq;
                             string partName = System.IO.Path.GetFileNameWithoutExtension(refPath);
                             
                             // 更新任务窗格中的出图状态
-                            taskPaneForm.UpdatePartDrawnStatus(partName, "已出图");
+                            taskPaneControl.UpdatePartDrawnStatus(partName, "已出图");
                             Debug.WriteLine($"已更新零件 '{partName}' 的出图状态");
                         }
                     }
