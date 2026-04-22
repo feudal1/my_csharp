@@ -16,12 +16,14 @@ using System.Threading.Tasks;
 using System.Text;
 
 using System.Linq;
+using ctool;
 
    namespace SolidWorksAddinStudy
 {
    
     public partial class AddinStudy 
 {
+    private static readonly AiAgent _aiAgent = new AiAgent();
   
  
 
@@ -165,7 +167,7 @@ using System.Linq;
             swApp?.SendMsgToUser($"创建工程图失败：{ex.Message}");
         }
     }
-    [Command(1005, "新建工程图", "为当前零件创建工程图并添加视图", "newdrw2", (int)swDocumentTypes_e.swDocPART)]
+    [Command(1005, "新建工程图", "为当前零件/装配体创建工程图并添加视图", "newdrw2", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY)]
     private void NewDrw2()
     {
         try
@@ -180,7 +182,7 @@ using System.Linq;
             if (swModel == null)
             {
                 Debug.WriteLine("没有打开的文档");
-                swApp.SendMsgToUser("请先打开一个零件文档");
+                swApp.SendMsgToUser("请先打开一个零件或装配体文档");
                 return;
             }
 
@@ -551,6 +553,7 @@ using System.Linq;
     [Command(1020, "导出方管 STEP", "仅导出装配体中的方管零件为 STEP 格式", "asm2squaretube", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void AsmSquareTubeStep()
     {
+       
         try
         {
             if (swApp == null)
@@ -558,7 +561,8 @@ using System.Linq;
                 Debug.WriteLine("SolidWorks 未初始化");
                 return;
             }
-
+            
+         
             ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
             
             if (swModel == null)
@@ -582,6 +586,7 @@ using System.Linq;
             Debug.WriteLine($"方管 STEP 导出失败：{ex.Message}");
             swApp?.SendMsgToUser($"方管 STEP 导出失败：{ex.Message}");
         }
+       
     }
 
 
@@ -759,6 +764,85 @@ using System.Linq;
         {
             Debug.WriteLine($"AddBendDimensions failed: {ex.Message}");
             swApp?.SendMsgToUser($"AddBendDimensions failed: {ex.Message}");
+        }
+    }
+
+    [Command(1090, "AI对话", "调用 ctool 的 AI Agent 进行对话测试", "ai_chat", 0, ShowOutputWindow = true)]
+    private async void AiChat()
+    {
+        try
+        {
+            ShowOutputWindow();
+            string prompt = ShowAiInputDialog();
+            if (string.IsNullOrWhiteSpace(prompt))
+            {
+                Console.WriteLine("已取消 AI 对话。");
+                return;
+            }
+
+            Console.WriteLine("\n[AI] 正在思考...");
+            var reply = await _aiAgent.ChatAsync(prompt);
+            Console.WriteLine($"\n[AI] {reply}\n");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"AI 对话失败：{ex.Message}");
+            swApp?.SendMsgToUser($"AI 对话失败：{ex.Message}");
+        }
+    }
+
+    private string ShowAiInputDialog()
+    {
+        using (var form = new Form())
+        {
+            form.Text = "AI 对话输入";
+            form.Size = new Size(520, 180);
+            form.StartPosition = FormStartPosition.CenterScreen;
+            form.FormBorderStyle = FormBorderStyle.FixedDialog;
+            form.MaximizeBox = false;
+            form.MinimizeBox = false;
+
+            var label = new Label
+            {
+                Text = "请输入 AI 问题：",
+                Left = 12,
+                Top = 16,
+                Width = 480
+            };
+
+            var textBox = new TextBox
+            {
+                Left = 12,
+                Top = 42,
+                Width = 480
+            };
+
+            var okButton = new Button
+            {
+                Text = "发送",
+                Left = 332,
+                Top = 80,
+                Width = 75,
+                DialogResult = DialogResult.OK
+            };
+
+            var cancelButton = new Button
+            {
+                Text = "取消",
+                Left = 417,
+                Top = 80,
+                Width = 75,
+                DialogResult = DialogResult.Cancel
+            };
+
+            form.Controls.Add(label);
+            form.Controls.Add(textBox);
+            form.Controls.Add(okButton);
+            form.Controls.Add(cancelButton);
+            form.AcceptButton = okButton;
+            form.CancelButton = cancelButton;
+
+            return form.ShowDialog() == DialogResult.OK ? textBox.Text.Trim() : "";
         }
     }
 

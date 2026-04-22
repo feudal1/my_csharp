@@ -94,23 +94,11 @@ namespace tools
         static void Register(string name, string desc, Action<string[]> action)
         {
             commands[name.ToLower()] = args => { action(args); return Task.CompletedTask; };
-            CommandRegistry.Instance.RegisterCommand(new CommandInfo
-            {
-                Name = name,
-                Description = desc,
-                AsyncAction = args => { action(args); return Task.CompletedTask; }
-            });
         }
 
         static void Register(string name, string desc, Func<string[], Task> asyncAction)
         {
             commands[name.ToLower()] = asyncAction;
-            CommandRegistry.Instance.RegisterCommand(new CommandInfo
-            {
-                Name = name,
-                Description = desc,
-                AsyncAction = asyncAction
-            });
         }
 
         static async Task Execute(string input)
@@ -133,8 +121,8 @@ namespace tools
         static void ShowHelp()
         {
             Console.WriteLine("\n可用命令:");
-            foreach (var c in CommandRegistry.Instance.GetAllCommands())
-                Console.WriteLine($"  {c.Value.Name} - {c.Value.Description}");
+            foreach (var c in commands.Keys)
+                Console.WriteLine($"  {c}");
             Console.WriteLine();
         }
 

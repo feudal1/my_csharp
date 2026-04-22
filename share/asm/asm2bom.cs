@@ -9,10 +9,53 @@ using System.IO;
 
 namespace tools
 {
+    public class BomPartExportInfo
+    {
+        public string PartName { get; set; } = string.Empty;
+        public string PartPath { get; set; } = string.Empty;
+    }
+
     public class asm2bom
     {
         // 任务窗格更新回调
         public static Action<List<object>>? TaskPaneUpdateCallback { get; set; }
+        private static readonly object _bomCacheLock = new object();
+        private static List<BomPartExportInfo> _lastBomParts = new List<BomPartExportInfo>();
+        private static bool _hasGeneratedPartList = false;
+
+        public static bool HasGeneratedPartList()
+        {
+            lock (_bomCacheLock)
+            {
+                return _hasGeneratedPartList;
+            }
+        }
+
+        public static List<BomPartExportInfo> GetLastBomParts()
+        {
+            lock (_bomCacheLock)
+            {
+                return new List<BomPartExportInfo>(_lastBomParts);
+            }
+        }
+
+        private static void SetLastBomParts(List<BomPartExportInfo> parts)
+        {
+            lock (_bomCacheLock)
+            {
+                _lastBomParts = parts ?? new List<BomPartExportInfo>();
+                _hasGeneratedPartList = true;
+            }
+        }
+
+        public static void ResetPartListCache()
+        {
+            lock (_bomCacheLock)
+            {
+                _lastBomParts = new List<BomPartExportInfo>();
+                _hasGeneratedPartList = false;
+            }
+        }
         
         /// <summary>
         /// 运行BOM导出
@@ -27,6 +70,8 @@ namespace tools
             try
             {
                 swApp.CommandInProgress = true;
+                ResetPartListCache();
+                var bomPartsForExport = new Dictionary<string, BomPartExportInfo>(StringComparer.OrdinalIgnoreCase);
                 Console.WriteLine("=== 开始BOM导出 ===");
                 // 确保是装配体
                 if (swModel.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
@@ -231,6 +276,19 @@ namespace tools
 
                                 if (partDoc != null && partDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
                                 {
+                                    string partPath = partDoc.GetPathName();
+                                    if (!string.IsNullOrEmpty(partPath))
+                                    {
+                                        if (!bomPartsForExport.ContainsKey(partPath))
+                                        {
+                                            bomPartsForExport[partPath] = new BomPartExportInfo
+                                            {
+                                                PartName = partname,
+                                                PartPath = partPath
+                                            };
+                                        }
+                                    }
+
                                     PartDoc part = (PartDoc)partDoc;
                                     
                                     // 优化3: 批量获取自定义属性，减少COM调用次数
@@ -467,6 +525,9 @@ namespace tools
                 
                 // 提取 BOM 数据并更新任务窗格
                 UpdateTaskPaneFromBom(swTableAnnotation);
+
+                // 同步保存 BOM 零件清单（供 asm2do 等流程复用，避免重复扫描/重复建表）
+                SetLastBomParts(new List<BomPartExportInfo>(bomPartsForExport.Values));
                 
                 // 只在需要时启动 Excel 文件
                 if (exportExcel)
@@ -487,6 +548,10 @@ namespace tools
                 Console.WriteLine($"发生错误：{ex.Message}");
                 Console.WriteLine(ex.StackTrace);
                 return -1;
+            }
+            finally
+            {
+                swApp.CommandInProgress = false;
             }
         }
 

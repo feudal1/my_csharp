@@ -1,55 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Library</OutputType>
+    <LangVersion>8.0</LangVersion>
     <Nullable>enable</Nullable>
-    <UseWindowsForms>true</UseWindowsForms>
-    <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
-    <NoWarn>$(NoWarn);MSB3245</NoWarn>
-       <ConsoleEncoding>utf-8</ConsoleEncoding>
-       <ApplicationIcon>favicon.ico</ApplicationIcon>
-    
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Content Include="favicon.ico" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\share\share.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="Autodesk.AutoCAD.Interop">
-      <HintPath>..\reference\Autodesk.AutoCAD.Interop.dll</HintPath>
-    </Reference>
-    <Reference Include="Autodesk.AutoCAD.Interop.Common">
-      <HintPath>..\reference\Autodesk.AutoCAD.Interop.Common.dll</HintPath>
-    </Reference>
-    <Reference Include="SolidWorks.Interop.sldworks">
-      <HintPath>..\reference\SolidWorks.Interop.sldworks.dll</HintPath>
-    </Reference>
-    <Reference Include="SolidWorks.Interop.swconst">
-      <HintPath>..\reference\SolidWorks.Interop.swconst.dll</HintPath>
-    </Reference>
+    <Compile Include="AiAgent.cs" />
   </ItemGroup>
-
-  <ItemGroup>
-
-    <None Update="api_key.zip">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-
-    <None Update="favicon.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-
 </Project>

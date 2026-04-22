@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -21,6 +23,8 @@ namespace tools
         private const string DefaultModel = "qwen3.5-flash";
         
         private const string ApiUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+        private const string ApiHost = "dashscope.aliyuncs.com";
+        private const int ApiPort = 443;
         
         private readonly HttpClient _httpClient;
         private readonly string _shotMemoryFile;
@@ -28,13 +32,16 @@ namespace tools
         private readonly string _worksKnowledgeFile;
         private readonly string _runLogFilePath;
         private readonly Func<string>? _getCommandsDescriptionFunc;
+        private bool _networkDiagLogged;
 
         public LlmService(Func<string>? getCommandsDescriptionFunc = null)
         {
-            _httpClient = new HttpClient
-            {
-                Timeout = TimeSpan.FromMinutes(5)
-            };
+            // net48 下默认 TLS 协议可能不包含 TLS1.2，导致 HTTPS 请求失败
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+            ServicePointManager.Expect100Continue = false;
+            ServicePointManager.DefaultConnectionLimit = Math.Max(ServicePointManager.DefaultConnectionLimit, 20);
+
+            _httpClient = CreateHttpClient();
 
             // 初始化文件路径
             string llmDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llm");
@@ -42,7 +49,7 @@ namespace tools
             {
                 Directory.CreateDirectory(llmDir);
             }
-            
+
             _shotMemoryFile = Path.Combine(llmDir, "shot_memory.json");
       _logFilePath = Path.Combine(llmDir, "longterm_memory.txt");
             _worksKnowledgeFile = Path.Combine(llmDir, "works_knowledge.txt");
@@ -50,6 +57,87 @@ namespace tools
             _getCommandsDescriptionFunc = getCommandsDescriptionFunc;
             
         
+        }
+
+        private HttpClient CreateHttpClient()
+        {
+            var handler = new HttpClientHandler
+            {
+                UseProxy = true,
+                Proxy = BuildProxy(),
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+            };
+
+            return new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromMinutes(5)
+            };
+        }
+
+        private IWebProxy? BuildProxy()
+        {
+            // 优先读取常见代理环境变量，兼容公司网络或本机代理软件
+            string? proxyText = Environment.GetEnvironmentVariable("HTTPS_PROXY")
+                                ?? Environment.GetEnvironmentVariable("https_proxy")
+                                ?? Environment.GetEnvironmentVariable("HTTP_PROXY")
+                                ?? Environment.GetEnvironmentVariable("http_proxy");
+            if (!string.IsNullOrWhiteSpace(proxyText) && Uri.TryCreate(proxyText, UriKind.Absolute, out var proxyUri))
+            {
+                Console.WriteLine($"[调试] 使用环境变量代理：{proxyUri}");
+                return new WebProxy(proxyUri)
+                {
+                    BypassProxyOnLocal = true
+                };
+            }
+
+            // 回退到系统默认代理（WinINet）
+            var systemProxy = WebRequest.DefaultWebProxy;
+            if (systemProxy != null)
+            {
+                try
+                {
+                    var testUri = new Uri($"https://{ApiHost}");
+                    var detectedProxyUri = systemProxy.GetProxy(testUri);
+                    Console.WriteLine($"[调试] 系统代理检测结果：{detectedProxyUri}");
+                }
+                catch
+                {
+                    // 仅用于调试，不影响主流程
+                }
+            }
+            return systemProxy;
+        }
+
+        private async Task LogNetworkDiagnosticsOnceAsync()
+        {
+            if (_networkDiagLogged)
+            {
+                return;
+            }
+            _networkDiagLogged = true;
+
+            try
+            {
+                var addresses = await Dns.GetHostAddressesAsync(ApiHost);
+                Console.WriteLine($"[调试] DNS 解析 {ApiHost}：{string.Join(", ", addresses.Select(a => a.ToString()))}");
+                foreach (var address in addresses.Take(2))
+                {
+                    using var tcp = new TcpClient(address.AddressFamily);
+                    var connectTask = tcp.ConnectAsync(address, ApiPort);
+                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5));
+                    var completed = await Task.WhenAny(connectTask, timeoutTask);
+                    if (completed == connectTask && tcp.Connected)
+                    {
+                        Console.WriteLine($"[调试] TCP 连通成功：{address}:{ApiPort}");
+                        break;
+                    }
+                    Console.WriteLine($"[调试] TCP 连通超时：{address}:{ApiPort}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[调试] 网络预检失败：{ex.GetType().Name} - {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -386,6 +474,13 @@ namespace tools
             sysPrompt.AppendLine("3. 只有在无法找到合适工具或需要澄清用户意图时，才可以使用自由文本回复");
             sysPrompt.AppendLine("4. 工具调用格式必须严格按照要求，不要自行创造工具名称");
 
+            var briefOps = AiOperationBrief.GetRecentForPrompt(20);
+            if (!string.IsNullOrWhiteSpace(briefOps))
+            {
+                sysPrompt.AppendLine("");
+                sysPrompt.AppendLine(briefOps);
+            }
+
             return sysPrompt.ToString();
         }
 
@@ -719,6 +814,7 @@ namespace tools
                 Console.WriteLine($"\n[调试] 请求体 JSON 长度：{jsonBody.Length} 字符");
                 Console.WriteLine($"[调试] HttpClient 状态：{(_httpClient != null ? "已初始化" : "未初始化")}");
                 Console.WriteLine($"[调试] HttpClient Timeout: {_httpClient?.Timeout.TotalSeconds} 秒");
+                await LogNetworkDiagnosticsOnceAsync();
                 
                 // 设置 Header
                 _httpClient!.DefaultRequestHeaders.Clear();

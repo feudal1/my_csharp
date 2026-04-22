@@ -34,6 +34,8 @@ namespace SolidWorksAddinStudy
         // 任务窗格相关
         private static ITaskpaneView? pTaskPanView;
         private static PartStatusControl? TaskPanWinFormControl;
+        private static ITaskpaneView? workProjectTaskPaneView;
+        private static WorkProjectTaskPaneControl? workProjectTaskPaneControl;
 
 
         /// <summary>
@@ -44,7 +46,7 @@ namespace SolidWorksAddinStudy
             if (consoleForm == null || consoleForm.IsDisposed)
             {
                 consoleForm = new ConsoleOutputForm();
-                consoleForm.TopMost = true;  // 设置窗口置顶
+               // 设置窗口置顶
                 consoleForm.Show();
                 consoleForm.StartIntercept();
             }
@@ -54,7 +56,7 @@ namespace SolidWorksAddinStudy
                 {
                     consoleForm.WindowState = FormWindowState.Normal;
                 }
-                consoleForm.TopMost = true;  // 确保窗口置顶
+              
                 consoleForm.BringToFront();
             }
         }
@@ -359,14 +361,23 @@ namespace SolidWorksAddinStudy
                 // 如果已经存在任务窗格，先清理
                 CleanupTaskPane();
                 
-                // 创建任务窗格视图
+                // 创建零件状态任务窗格视图
                 pTaskPanView = swApp.CreateTaskpaneView2("", "零件处理状态");
                 
                 if (pTaskPanView != null)
                 {
                     TaskPanWinFormControl = new PartStatusControl(swApp);
                     pTaskPanView.DisplayWindowFromHandlex64(TaskPanWinFormControl.Handle.ToInt64());
-                    Debug.WriteLine("任务窗格已初始化");
+                    Debug.WriteLine("零件状态任务窗格已初始化");
+                }
+
+                // 创建工作项目记录任务窗格
+                workProjectTaskPaneView = swApp.CreateTaskpaneView2("", "工作项目记录");
+                if (workProjectTaskPaneView != null)
+                {
+                    workProjectTaskPaneControl = new WorkProjectTaskPaneControl();
+                    workProjectTaskPaneView.DisplayWindowFromHandlex64(workProjectTaskPaneControl.Handle.ToInt64());
+                    Debug.WriteLine("工作项目记录任务窗格已初始化");
                 }
             }
             catch (Exception ex)
@@ -387,11 +398,23 @@ namespace SolidWorksAddinStudy
                     TaskPanWinFormControl.Dispose();
                     TaskPanWinFormControl = null;
                 }
+
+                if (workProjectTaskPaneControl != null)
+                {
+                    workProjectTaskPaneControl.Dispose();
+                    workProjectTaskPaneControl = null;
+                }
                 
                 if (pTaskPanView != null)
                 {
                     pTaskPanView.DeleteView();
                     pTaskPanView = null;
+                }
+
+                if (workProjectTaskPaneView != null)
+                {
+                    workProjectTaskPaneView.DeleteView();
+                    workProjectTaskPaneView = null;
                 }
             }
             catch (Exception ex)
@@ -406,6 +429,11 @@ namespace SolidWorksAddinStudy
         public static PartStatusControl? GetTaskPaneControl()
         {
             return TaskPanWinFormControl;
+        }
+
+        public static WorkProjectTaskPaneControl? GetWorkProjectTaskPaneControl()
+        {
+            return workProjectTaskPaneControl;
         }
 
         public static SldWorks? GetSwApp()

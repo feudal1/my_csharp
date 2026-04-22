@@ -49,18 +49,7 @@ using System.Linq;
             {
                 try
                 {
-                    var cmdAttr = method.GetCustomAttribute<CommandAttribute>();
-                    
-                    // 如果设置了 ShowOutputWindow，则包装执行
-                    if (cmdAttr != null && cmdAttr.ShowOutputWindow)
-                    {
-                        ShowOutputWindow();
-                        method.Invoke(this, null);
-                    }
-                    else
-                    {
-                        method.Invoke(this, null);
-                    }
+                    ExecuteRegisteredMethod(method);
                 }
                 catch (Exception ex)
                 {
@@ -70,6 +59,52 @@ using System.Linq;
             else
             {
                 swApp?.SendMsgToUser($"未找到命令 ID: {commandId}");
+            }
+        }
+
+        /// <summary>
+        /// 按命令名执行插件命令（供 ctool / AI 桥接层调用）
+        /// </summary>
+        public bool ExecuteCommandByName(string commandName)
+        {
+            if (string.IsNullOrWhiteSpace(commandName))
+            {
+                return false;
+            }
+
+            var target = _commandRegistry.Values.FirstOrDefault(method =>
+            {
+                var attr = method.GetCustomAttribute<CommandAttribute>();
+                return attr != null &&
+                       (string.Equals(attr.LocalizedName, commandName, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(attr.Name, commandName, StringComparison.OrdinalIgnoreCase));
+            });
+
+            if (target == null)
+            {
+                return false;
+            }
+
+            ExecuteRegisteredMethod(target);
+            return true;
+        }
+
+        private void ExecuteRegisteredMethod(MethodInfo method)
+        {
+            var cmdAttr = method.GetCustomAttribute<CommandAttribute>();
+            string commandName = cmdAttr?.LocalizedName ?? method.Name;
+            try
+            {
+                if (cmdAttr != null && cmdAttr.ShowOutputWindow)
+                {
+                    ShowOutputWindow();
+                }
+
+                method.Invoke(this, null);
+            }
+            catch
+            {
+                throw;
             }
         }
    private void AddCommandMgr()

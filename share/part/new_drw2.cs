@@ -15,7 +15,23 @@ namespace tools
             {
                 var partdoc = swModel;
                 string fullpath= swModel .GetPathName();
-                      string drwpath = swModel.GetPathName().Replace("prt", "PRT").Replace("PRT", "drw");
+                int docType = swModel.GetType();
+                
+                // 根据文档类型生成不同的工程图路径
+                string drwpath = "";
+                if (docType == (int)swDocumentTypes_e.swDocPART)
+                {
+                    drwpath = swModel.GetPathName().Replace("prt", "PRT").Replace("PRT", "drw");
+                }
+                else if (docType == (int)swDocumentTypes_e.swDocASSEMBLY)
+                {
+                    drwpath = swModel.GetPathName().Replace("sldasm", "SLDASM").Replace("SLDASM", "drw");
+                }
+                else
+                {
+                    Console.WriteLine($"不支持的文档类型：{docType}");
+                    return;
+                }
                  
                  // 检查工程图文件是否已存在
                  if (File.Exists(drwpath))
@@ -48,9 +64,12 @@ namespace tools
                var view1 = drawingDoc.CreateDrawViewFromModelView3(fullpath, "*上视", 0.08, 0.10, 0);
                 if (view1 == null) Console.WriteLine("view=null");
                     if (view1==null) view1 = drawingDoc.CreateDrawViewFromModelView3(fullpath, "*Top", 0.13, 0.22, 0);
+                
+                // 创建展开视图（零件和装配体都使用相同方式）
                 var view2 = drawingDoc.CreateUnfoldedViewAt3(0.20, 0.10, 0, false);
-              swModel.Extension.SelectByID2(view1.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
+                swModel.Extension.SelectByID2(view1.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
                 var view3 = drawingDoc.CreateUnfoldedViewAt3(0.08, 0.15, 0, false);
+                
                swModel.SetUserPreferenceToggle((int)swUserPreferenceToggle_e.swDisplaySketches, false);
               // swModel.Extension.SelectByID2(view1.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
             

@@ -6,6 +6,7 @@ using System.Diagnostics;
 using SolidWorks.Interop.swconst;
 using System.Collections.Generic;
 using System.IO;
+using System.Collections.Generic;
 using tools;
 namespace SolidWorksAddinStudy
 {
@@ -102,6 +103,8 @@ namespace SolidWorksAddinStudy
                   Directory.CreateDirectory(outputDirectory);
               }
 
+              // 导出前清空选择集，避免零件文档中“按当前选中面”仅导出局部几何
+              swModel.ClearSelection2(true);
               var result = swModel.SaveAs3(outputPath, 0, 2);
               
               Debug.WriteLine($"STEP导出结果: {result}, 路径: {outputPath}");
@@ -166,20 +169,254 @@ namespace SolidWorksAddinStudy
           }
       }
 
+      public string modify_equations()
+      {
+          try
+          {
+              Debug.WriteLine("开始修改方程式");
+              if (swApp == null)
+              {
+                  Debug.WriteLine("SolidWorks 未初始化");
+                  return "SolidWorks 未初始化";
+              }
+
+              var acswModel = (ModelDoc2)swApp.ActiveDoc;
+              if (acswModel == null)
+              {
+                  Debug.WriteLine("没有打开的文档");
+                  swApp.SendMsgToUser("请先打开一个文档");
+                  return "没有打开的文档";
+              }
+
+              var parts = CollectSelectedPartDocuments(acswModel);
+              if (parts.Count == 0)
+              {
+                  Debug.WriteLine("未选中实体或无法解析为零件");
+                  swApp.SendMsgToUser("请在零件或装配体中选中一个或多个面/实体（装配体中需能解析到零件文档）");
+                  return "未选中实体";
+              }
+
+              Debug.WriteLine($"目标零件数: {parts.Count}");
+              return EquationModifier.ModifyEquationsForParts(swApp, parts);
+          }
+          catch (Exception ex)
+          {
+              Debug.WriteLine($"修改方程式失败：{ex.Message}");
+              swApp?.SendMsgToUser($"修改方程式失败：{ex.Message}");
+              return $"修改方程式失败：{ex.Message}";
+          }
+      }
+
+      /// <summary>
+      /// 从当前多选几何中收集不重复的零件文档（装配体支持多零件；零件文档仅自身）。
+      /// </summary>
+      private static List<ModelDoc2> CollectSelectedPartDocuments(ModelDoc2 activeDoc)
+      {
+          var result = new List<ModelDoc2>();
+          var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+          var swApp = AddinStudy.GetSwApp();
+
+          void TryAdd(ModelDoc2? partDoc)
+          {
+              if (partDoc == null || partDoc.GetType() != (int)swDocumentTypes_e.swDocPART)
+              {
+                  return;
+              }
+
+              string key = partDoc.GetPathName();
+              if (string.IsNullOrEmpty(key))
+              {
+                  key = partDoc.GetTitle();
+              }
+
+              if (seen.Add(key))
+              {
+                  result.Add(partDoc);
+              }
+          }
+
+          ModelDoc2? EnsurePartDocVisible(Component2 comp)
+          {
+              if (comp == null)
+              {
+                  return null;
+              }
+
+              ModelDoc2? partDoc = comp.GetModelDoc2() as ModelDoc2;
+              if (partDoc == null)
+              {
+                  string path = comp.GetPathName();
+                  if (!string.IsNullOrEmpty(path) && swApp != null)
+                  {
+                      try
+                      {
+                          int errors = 0;
+                          int warnings = 0;
+                          partDoc = swApp.OpenDoc6(
+                              path,
+                              (int)swDocumentTypes_e.swDocPART,
+                              (int)swOpenDocOptions_e.swOpenDocOptions_Silent,
+                              "",
+                              ref errors,
+                              ref warnings) as ModelDoc2;
+                      }
+                      catch (Exception ex)
+                      {
+                          Debug.WriteLine($"打开零件文档失败: {path}, {ex.Message}");
+                      }
+                  }
+              }
+
+              if (partDoc == null)
+              {
+                  return null;
+              }
+
+              try
+              {
+                  partDoc.Visible = true;
+              }
+              catch (Exception ex)
+              {
+                  Debug.WriteLine($"设置零件可见失败: {partDoc.GetTitle()}, {ex.Message}");
+              }
+
+              return partDoc.Visible ? partDoc : null;
+          }
+
+          var swSelMgr = (SelectionMgr)activeDoc.SelectionManager;
+          int n = swSelMgr.GetSelectedObjectCount2(-1);
+          if (n <= 0)
+          {
+              return result;
+          }
+
+          if (activeDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
+          {
+              bool anyGeometry = false;
+              for (int i = 1; i <= n; i++)
+              {
+                  object selObj = swSelMgr.GetSelectedObject6(i, -1);
+                  if (selObj is Face2 face && face.GetBody() != null)
+                  {
+                      anyGeometry = true;
+                      break;
+                  }
+
+                  if (selObj is IBody2)
+                  {
+                      anyGeometry = true;
+                      break;
+                  }
+              }
+
+              if (anyGeometry)
+              {
+                  TryAdd(activeDoc);
+              }
+
+              return result;
+          }
+
+          if (activeDoc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
+          {
+              for (int i = 1; i <= n; i++)
+              {
+                  object selObj = swSelMgr.GetSelectedObject6(i, -1);
+                  IBody2 body = null;
+                  if (selObj is Face2 face)
+                  {
+                      body = (IBody2)face.GetBody();
+                  }
+                  else if (selObj is IBody2 b)
+                  {
+                      body = b;
+                  }
+
+                  if (body == null)
+                  {
+                      continue;
+                  }
+
+                  var comp = (Component2)swSelMgr.GetSelectedObjectsComponent3(i, -1);
+                  var partModel = comp == null ? null : EnsurePartDocVisible(comp);
+                  TryAdd(partModel);
+              }
+          }
+
+          return result;
+      }
+
        public (ModelDoc2,IBody2) get_select_body(ModelDoc2 swModel)
        {
-           var swSelMgr = (SelectionMgr)swModel.SelectionManager;
-            var selboj = swSelMgr.IGetSelectedObject(1);
-            var face= (Face2)selboj;
-            var body = (IBody2)face.GetBody();
-            if (swModel.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
-            {
-                var comp = (Component2)swSelMgr.GetSelectedObjectsComponent(1);
-                swModel = (ModelDoc2)comp.GetModelDoc2();
-            }
+           try
+           {
+               var swSelMgr = (SelectionMgr)swModel.SelectionManager;
+               
+               // 检查是否有选中对象
+               if (swSelMgr.GetSelectedObjectCount2(-1) <= 0)
+               {
+                   Debug.WriteLine("没有选中任何对象");
+                   return (null, null);
+               }
+               
+               var selObj = swSelMgr.GetSelectedObject6(1, -1);
+               if (selObj == null)
+               {
+                   Debug.WriteLine("无法获取选中对象");
+                   return (null, null);
+               }
+               
+               Face2 face = null;
+               IBody2 body = null;
+               
+               // 尝试从选中的对象获取面和实体
+               if (selObj is Face2)
+               {
+                   face = (Face2)selObj;
+                   body = (IBody2)face.GetBody();
+               }
+               else if (selObj is IBody2)
+               {
+                   body = (IBody2)selObj;
+               }
+               else
+               {
+                   Debug.WriteLine($"选中的对象类型不支持: {selObj.GetType().Name}");
+                   return (null, null);
+               }
+               
+               if (body == null)
+               {
+                   Debug.WriteLine("无法获取实体对象");
+                   return (null, null);
+               }
+               
+               // 如果是装配体，需要获取零件文档
+               if (swModel.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
+               {
+                   var comp = (Component2)swSelMgr.GetSelectedObjectsComponent3(1, -1);
+                   if (comp != null)
+                   {
+                       var partModel = (ModelDoc2)comp.GetModelDoc2();
+                       if (partModel != null)
+                       {
+                           Console.WriteLine($"从装配体获取零件文档: {partModel.GetTitle()}");
+                           return (partModel, body);
+                       }
+                   }
+                   Console.WriteLine("无法从装配体获取零件文档");
+                   return (null, null);
+               }
 
-            Console.WriteLine(body.Name);
-            return (swModel, body);
+               Console.WriteLine(body.Name);
+               return (swModel, body);
+           }
+           catch (Exception ex)
+           {
+               Debug.WriteLine($"get_select_body 错误: {ex.Message}");
+               return (null, null);
+           }
        }
 
    
@@ -209,6 +446,10 @@ namespace SolidWorksAddinStudy
 
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "check_k_factor", "check_k_factor", "", "", "");
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "check_k_factor", "check_k_factor", "", "", "");
+
+                // 添加修改方程式的右键菜单项
+                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "modify_equations", "modify_equations", "", "", "");
+                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "modify_equations", "modify_equations", "", "", "");
 
                       
             }
