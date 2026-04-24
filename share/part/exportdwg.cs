@@ -37,12 +37,14 @@ namespace tools
                     return "";
                 }
                 PartDoc swPart = (PartDoc)swModel;
-                string outputfile = directory + "\\" + "出图" + "\\" + thickness;
+                string folderName = Path.GetFileName(directory);
+                string outputRootName = string.IsNullOrWhiteSpace(folderName) ? "钣金" : $"{folderName}钣金";
+                string outputfile = Path.Combine(directory, outputRootName, thickness);
                 if (!Directory.Exists(outputfile))
                 {
                     Directory.CreateDirectory(outputfile);
                 }
-                string dwgFileName = directory + "\\" + "出图" + "\\" + thickness + "\\" + Path.GetFileNameWithoutExtension(fullPath) + ".dwg";
+                string dwgFileName = Path.Combine(outputfile, Path.GetFileNameWithoutExtension(fullPath) + ".dwg");
                 double[] dataAlignment = new double[12];
                 dataAlignment[0] = 0.0;
                 dataAlignment[1] = 0.0;

@@ -20,12 +20,14 @@ namespace tools
                 
             }
             
-            string outputfile = directory + "\\" + "出图" + "\\" + "工程图";
+            string folderName = Path.GetFileName(directory);
+            string outputRootName = string.IsNullOrWhiteSpace(folderName) ? "钣金" : $"{folderName}钣金";
+            string outputfile = Path.Combine(directory, outputRootName, "工程图");
             if (!Directory.Exists(outputfile))
             {
                 Directory.CreateDirectory(outputfile);
             }
-            string dwgFileName = directory + "\\" + "出图" + "\\" +  "工程图" + "\\" + Path.GetFileNameWithoutExtension(fullpath) + ".PNG";
+            string dwgFileName = Path.Combine(outputfile, Path.GetFileNameWithoutExtension(fullpath) + ".PNG");
             ModelView myModelView = (ModelView)swModel.ActiveView;
             myModelView.FrameState = (int)swWindowState_e.swWindowMaximized;
              swModel.ViewZoomtofit2();

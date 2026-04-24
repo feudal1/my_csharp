@@ -2,6 +2,7 @@ using System;
 using System.Windows.Forms;
 using System.Collections.Generic;
 using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.swconst;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -18,6 +19,7 @@ namespace SolidWorksAddinStudy
         private DataGridView statusGrid;
         private Label infoLabel;
         private Button refreshButton;
+        private Button compressNonSheetButton;
         
         // 存储零件状态数据
         private List<PartStatusInfo> partStatusList = new List<PartStatusInfo>();
@@ -69,6 +71,15 @@ namespace SolidWorksAddinStudy
             refreshButton.Font = new System.Drawing.Font("Microsoft YaHei", 9F);
             refreshButton.Click += RefreshButton_Click;
             header.Controls.Add(refreshButton);
+
+            // 创建压缩非钣金按钮
+            compressNonSheetButton = new Button();
+            compressNonSheetButton.Text = "压缩非钣金";
+            compressNonSheetButton.Location = new System.Drawing.Point(580, 10);
+            compressNonSheetButton.Size = new System.Drawing.Size(110, 30);
+            compressNonSheetButton.Font = new System.Drawing.Font("Microsoft YaHei", 9F);
+            compressNonSheetButton.Click += CompressNonSheetButton_Click;
+            header.Controls.Add(compressNonSheetButton);
             
             // 创建DataGridView显示状态
             statusGrid = new DataGridView();
@@ -131,7 +142,7 @@ namespace SolidWorksAddinStudy
                 {
                     try
                     {
-                        await tools.asm2bom.run(swApp, swModel, true, false);
+                        await tools.asm2bom.run(swApp, swModel, "零件", false);
                         Debug.WriteLine("BOM数据刷新完成");
                         
                         // 刷新完成后重新启用按钮
@@ -159,7 +170,108 @@ namespace SolidWorksAddinStudy
                 refreshButton.Enabled = true;
             }
         }
-        
+
+        /// <summary>
+        /// 压缩全部非钣金件
+        /// </summary>
+        private void CompressNonSheetButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (swApp == null)
+                {
+                    MessageBox.Show("SolidWorks未连接", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+                if (swModel == null)
+                {
+                    MessageBox.Show("没有打开的文档", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (swModel.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+                {
+                    MessageBox.Show("当前文档不是装配体", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (partStatusList.Count == 0)
+                {
+                    MessageBox.Show("任务窗格暂无零件数据，请先点击“刷新数据”", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                HashSet<string> nonSheetPartNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var part in partStatusList)
+                {
+                    if (!string.Equals(part.PartType, "钣金件", StringComparison.OrdinalIgnoreCase))
+                    {
+                        nonSheetPartNames.Add(part.PartName);
+                    }
+                }
+
+                if (nonSheetPartNames.Count == 0)
+                {
+                    MessageBox.Show("当前任务窗格中没有可压缩的非钣金件", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                AssemblyDoc swAssembly = (AssemblyDoc)swModel;
+                object[] components = (object[])swAssembly.GetComponents(false);
+                if (components == null || components.Length == 0)
+                {
+                    MessageBox.Show("当前装配体没有可处理的组件", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                int targetCount = 0;
+                int successCount = 0;
+                int failCount = 0;
+
+                foreach (object compObj in components)
+                {
+                    Component2 component = (Component2)compObj;
+                    string normalizedName = NormalizeComponentName(component.Name2);
+                    if (!nonSheetPartNames.Contains(normalizedName))
+                    {
+                        continue;
+                    }
+
+                    targetCount++;
+                    try
+                    {
+                        int result = component.SetSuppression2((int)swComponentSuppressionState_e.swComponentFullyLightweight);
+                        if (result == (int)swSuppressionError_e.swSuppressionChangeOk)
+                        {
+                            successCount++;
+                        }
+                        else
+                        {
+                            failCount++;
+                            Debug.WriteLine($"压缩失败: {component.Name2}, 返回码={result}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        failCount++;
+                        Debug.WriteLine($"压缩组件异常: {component.Name2}, {ex.Message}");
+                    }
+                }
+
+                swModel.EditRebuild3();
+                string message = $"压缩完成：目标 {targetCount} 个，成功 {successCount} 个，失败 {failCount} 个";
+                infoLabel.Text = message;
+                swApp.SendMsgToUser(message);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"压缩非钣金件失败: {ex.Message}");
+                MessageBox.Show($"压缩失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         /// <summary>
         /// 从命令刷新BOM数据（供外部调用）
         /// </summary>
@@ -195,7 +307,7 @@ namespace SolidWorksAddinStudy
                 {
                     try
                     {
-                        await tools.asm2bom.run(swApp, swModel, true, false);
+                        await tools.asm2bom.run(swApp, swModel, "零件", false);
                         Debug.WriteLine("BOM数据刷新完成");
                         
                         // 刷新完成后重新启用按钮
@@ -383,5 +495,34 @@ namespace SolidWorksAddinStudy
                 ReadOnly = true
             };
         }
+
+        private string NormalizeComponentName(string componentName)
+        {
+            if (string.IsNullOrWhiteSpace(componentName))
+            {
+                return string.Empty;
+            }
+
+            // 去掉"/"号及之前的文字
+            int slashIndex = componentName.LastIndexOf('/');
+            if (slashIndex >= 0 && slashIndex < componentName.Length - 1)
+            {
+                componentName = componentName.Substring(slashIndex + 1);
+            }
+
+            // 去掉末尾的"-数字"实例后缀
+            int lastDashIndex = componentName.LastIndexOf('-');
+            if (lastDashIndex > 0 && lastDashIndex < componentName.Length - 1)
+            {
+                string suffix = componentName.Substring(lastDashIndex + 1);
+                if (int.TryParse(suffix, out _))
+                {
+                    componentName = componentName.Substring(0, lastDashIndex);
+                }
+            }
+
+            return componentName;
+        }
     }
+
 }

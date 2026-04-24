@@ -12,7 +12,7 @@
             "problemMatcher": "$msCompile"
         },
         {
-            "label": "watch-ctool",
+            "label": "watch-ai",
             "command": "dotnet",
             "type": "process",
             "args": [
@@ -35,6 +35,32 @@
                 "/consoleloggerparameters:NoSummary;ForceNoAlign"
             ],
             "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "start-sldworks-programfiles",
+            "type": "process",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "Start-Process 'C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SLDWORKS.exe'; Start-Sleep -Seconds 2"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "start-sldworks-e-drive",
+            "type": "process",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "Start-Process 'E:\\sw\\SOLIDWORKS\\SLDWORKS.exe'; Start-Sleep -Seconds 2"
+            ],
+            "problemMatcher": []
         }
     ]
 }

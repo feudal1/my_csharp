@@ -14,6 +14,7 @@ namespace tools
     public class exportdwg2_body
     {
         private static string? directory = "";
+        private static string outputRootFolderName = "钣金";
         private static PartDoc swPart = null;
         private  static string fullPath = "";
         private static string partname = "";
@@ -40,7 +41,8 @@ namespace tools
                         {
                             SheetMetalFeatureData swSheetMetalData = (SheetMetalFeatureData)swFeature.GetDefinition();
                             thickness =  Math.Round(swSheetMetalData.Thickness*1000,2).ToString();
-                            outputfile = directory + "\\"+"出图"+"\\" + "下料" + "\\" + thickness;
+                            string materialThickness = BuildMaterialThicknessFolderName(swModel, thickness);
+                            outputfile = directory + "\\" + outputRootFolderName + "\\" + "下料" + "\\" + materialThickness;
                     
                         }
                         if (!Directory.Exists(outputfile))
@@ -130,26 +132,27 @@ swFeature2 .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);
                 
               
         }
-        static public int run(ModelDoc2 swModel)
+        static public int run(ModelDoc2 swModel, string? rootFolderName = null)
         {
            
             try
             {
                 successcount = 0;
-                              fullPath = swModel.GetPathName();
-                              partname = Path.GetFileNameWithoutExtension(fullPath);
+                fullPath = swModel.GetPathName();
+                partname = Path.GetFileNameWithoutExtension(fullPath);
 
                 if (string.IsNullOrEmpty(fullPath))
                 {
                     Console.WriteLine("错误：文档尚未保存，请先保存文件。");
                     
                 }
-                 directory = Path.GetDirectoryName(fullPath);
+                directory = Path.GetDirectoryName(fullPath);
                 if (string.IsNullOrEmpty(directory))
                 {
                     Console.WriteLine("错误：无法获取文件所在目录。");
                   
                 }
+                outputRootFolderName = BuildOutputRootFolderName(rootFolderName, directory);
                 swPart = (PartDoc)swModel;
     
                
@@ -195,6 +198,53 @@ swFeature2 .SetSuppression((int)swFeatureSuppressionAction_e.swSuppressFeature);
             }
         
             return successcount;
+        }
+
+        private static string BuildOutputRootFolderName(string? rootFolderName, string? currentDirectory)
+        {
+            if (!string.IsNullOrWhiteSpace(rootFolderName))
+            {
+                string result = rootFolderName.Trim();
+                foreach (char c in Path.GetInvalidFileNameChars())
+                {
+                    result = result.Replace(c, '_');
+                }
+
+                return string.IsNullOrWhiteSpace(result) ? "钣金" : result;
+            }
+
+            string folderName = Path.GetFileName(currentDirectory ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(folderName))
+            {
+                return "钣金";
+            }
+            return $"{folderName}钣金";
+        }
+
+        private static string BuildMaterialThicknessFolderName(ModelDoc2 swModel, string thickness)
+        {
+            if (swModel is not PartDoc partDoc)
+            {
+                return thickness;
+            }
+
+            try
+            {
+                string materialDb = string.Empty;
+                string materialName = partDoc.GetMaterialPropertyName(out materialDb) ?? string.Empty;
+                string normalized = materialName.ToLowerInvariant();
+
+                if (normalized.Contains("sus") || materialName.Contains("不锈钢"))
+                {
+                    return "sus" + thickness;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"读取材质失败，按普通厚度目录导出: {ex.Message}");
+            }
+
+            return thickness;
         }
     }
 }

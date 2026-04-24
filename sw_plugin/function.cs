@@ -16,19 +16,14 @@ using System.Threading.Tasks;
 using System.Text;
 
 using System.Linq;
-using ctool;
 
    namespace SolidWorksAddinStudy
 {
    
     public partial class AddinStudy 
 {
-    private static readonly AiAgent _aiAgent = new AiAgent();
-  
- 
 
-
-    [Command(1001, "导出展开", "装配体每个零件批量展开", "asm2export", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1001, "导出展开", "装配体每个零件批量展开", "asm2export", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void Asm2export()
     {
         try
@@ -48,9 +43,19 @@ using ctool;
                 return;
             }
            
+            string assemblyPath = swModel.GetPathName();
+            if (string.IsNullOrWhiteSpace(assemblyPath))
+            {
+                swApp.SendMsgToUser("当前装配体尚未保存，请先保存装配体");
+                return;
+            }
+            string assemblyDirectory = Path.GetDirectoryName(assemblyPath) ?? string.Empty;
+            string folderName = Path.GetFileName(assemblyDirectory);
+            string outputRootName = string.IsNullOrWhiteSpace(folderName) ? "钣金" : $"{folderName}钣金";
+
             asm2do.run(swApp, swModel, (model, app) => {
                 checkk_factor.run(app,model);
-                return exportdwg2_body.run(model);
+                return exportdwg2_body.run(model, outputRootName);
             });
 
 
@@ -63,7 +68,7 @@ using ctool;
             swApp?.SendMsgToUser($"工程图转换失败：{ex.Message}");
         }
     }
-    [Command(1002, "导出展开", "导出展开", "exportdwg", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1002, "导出展开", "导出展开", "exportdwg", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
     private void exportdwg()
     {
         try
@@ -82,8 +87,13 @@ using ctool;
                 swApp.SendMsgToUser("请先打开一个工程图文档");
                 return;
             }
+            string modelPath = swModel.GetPathName();
+            string modelDirectory = Path.GetDirectoryName(modelPath) ?? string.Empty;
+            string folderName = Path.GetFileName(modelDirectory);
+            string outputRootName = string.IsNullOrWhiteSpace(folderName) ? "钣金" : $"{folderName}钣金";
+
             checkk_factor.run(swApp,swModel);
-            exportdwg2_body.run(swModel);
+            exportdwg2_body.run(swModel, outputRootName);
 
 
 
@@ -98,7 +108,7 @@ using ctool;
         }
     }
   
-    [Command(1003, "工程图转 DWG", "将当前工程图转换为 DWG 格式并打开", "drw2dwg", (int)swDocumentTypes_e.swDocDRAWING)]
+    [SolidWorksAddinStudy.Command(1003, "工程图转 DWG", "将当前工程图转换为 DWG 格式并打开", "drw2dwg", (int)swDocumentTypes_e.swDocDRAWING)]
     private void Drw2Dwg()
     {
         try
@@ -134,7 +144,7 @@ using ctool;
         }
     }
 
-    [Command(1004, "新建工程图", "为当前零件创建工程图并添加视图", "newdrw", (int)swDocumentTypes_e.swDocPART)]
+    [SolidWorksAddinStudy.Command(1004, "新建工程图", "为当前零件创建工程图并添加视图", "newdrw", (int)swDocumentTypes_e.swDocPART)]
     private void NewDrw()
     {
         try
@@ -167,7 +177,7 @@ using ctool;
             swApp?.SendMsgToUser($"创建工程图失败：{ex.Message}");
         }
     }
-    [Command(1005, "新建工程图", "为当前零件/装配体创建工程图并添加视图", "newdrw2", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY)]
+    [SolidWorksAddinStudy.Command(1005, "新建工程图", "为当前零件/装配体创建工程图并添加视图", "newdrw2", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY)]
     private void NewDrw2()
     {
         try
@@ -203,7 +213,7 @@ using ctool;
 
 
        
-    [Command(1006, "打开 DWG工程图caxa", "打开 DWG工程图", "opendwgcaxa", (int)swDocumentTypes_e.swDocDRAWING)]
+    [SolidWorksAddinStudy.Command(1006, "打开 DWG工程图caxa", "打开 DWG工程图", "opendwgcaxa", (int)swDocumentTypes_e.swDocDRAWING)]
     private void Opencaxa()
     {
         try
@@ -235,7 +245,7 @@ using ctool;
             swApp?.SendMsgToUser($"工程图dwg打开失败：{ex.Message}");
         }
     }
-    [Command(1007, "打开 DWG工程图cad", "打开 DWG工程图", "opendwgcad", (int)swDocumentTypes_e.swDocDRAWING)]
+    [SolidWorksAddinStudy.Command(1007, "打开 DWG工程图cad", "打开 DWG工程图", "opendwgcad", (int)swDocumentTypes_e.swDocDRAWING)]
     private void Opencad()
     {
         try
@@ -267,7 +277,7 @@ using ctool;
             swApp?.SendMsgToUser($"工程图dwg打开失败：{ex.Message}");
         }
     }
-    [Command(1008, "新建装配体工程图", "为当前装配体创建工程图并添加视图和 BOM 表", "asmnewdrw", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1008, "新建装配体工程图", "为当前装配体创建工程图并添加视图和 BOM 表", "asmnewdrw", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void AsmNewDrw()
     {
         try
@@ -296,7 +306,7 @@ using ctool;
             swApp?.SendMsgToUser($"装配体工程图创建失败：{ex.Message}");
         }
     }
-    [Command(1009, "装配体批量检查展开", "检查装配体中所有零件的展开情况", "asm2check", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1009, "装配体批量检查展开", "检查装配体中所有零件的展开情况", "asm2check", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private async void Asm2check()
     {
         try
@@ -373,6 +383,7 @@ using ctool;
             
             int checkedCount = 0;
             int errorCount = 0;
+            int warningCount = 0;
             
             // 只检查钣金件
             foreach (var partInfo in sheetMetalParts)
@@ -389,9 +400,14 @@ using ctool;
                         if (partDoc != null)
                         {
                             partDoc.Visible = true;  // 触发文档加载
-                            
-                            checkk_factor.run(swApp, partDoc);
-                            checkedCount++;
+
+                            var checkResult = checkk_factor.RunWithStats(swApp, partDoc);
+                            if (checkResult.IsSheetMetal)
+                            {
+                                checkedCount++;
+                            }
+                            errorCount += checkResult.ErrorCount;
+                            warningCount += checkResult.WarningCount;
                             
                             // 检查完后关闭文档，释放资源
                             string docPath = partDoc.GetPathName();
@@ -418,7 +434,7 @@ using ctool;
             }
             
             Console.WriteLine($"\n=== 检查完成 ===");
-            Console.WriteLine($"共检查 {checkedCount} 个钣金件，{errorCount} 个错误");
+            Console.WriteLine($"共检查 {checkedCount} 个钣金件，{errorCount} 个错误，{warningCount} 个提醒");
         }
         catch (Exception ex)
         {
@@ -427,7 +443,7 @@ using ctool;
         }
     }
 
-    [Command(1010, "检查K因子", "检查当前零件的K因子设置是否正确", "checkkfactor", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1010, "检查K因子", "检查当前零件的K因子设置是否正确", "checkkfactor", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
     private void CheckKFactor()
     {
         try
@@ -458,7 +474,7 @@ using ctool;
         }
     }
 
-    [Command(1011, "装配体导出 BOM", "生成装配体 BOM 表并导出为 Excel（自动检测钣金件）", "asm2bom", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1011, "导出BOM（装配体）", "导出装配体层级BOM到Excel（仅装配体项）", "export_bom_assembly", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private async void Asm2bom()
     {
         try
@@ -478,7 +494,7 @@ using ctool;
                 return;
             }
            
-            await asm2bom.run(swApp, swModel,false);
+            await asm2bom.run(swApp, swModel, "装配体");
         }
         catch (Exception ex)
         {
@@ -487,7 +503,7 @@ using ctool;
         }
     }
 
-    [Command(1012, "零件导出 BOM", "生成零件 BOM 表并导出为 Excel", "asm2bom_part", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1012, "导出BOM（零件）", "导出装配体中的全部零件BOM到Excel", "export_bom_parts", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private async void Part2bom()
     {
         try
@@ -507,7 +523,7 @@ using ctool;
                 return;
             }
            
-            await asm2bom.run(swApp, swModel, true);
+            await asm2bom.run(swApp, swModel, "零件");
         }
         catch (Exception ex)
         {
@@ -516,7 +532,65 @@ using ctool;
         }
     }
 
-    [Command(1013, "批量导出 STEP", "批量导出装配体中所有零件为 STEP 格式", "asm2step", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1021, "导出BOM（方管）", "仅导出装配体中的管件BOM到Excel", "export_bom_tube", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private async void Tube2bom()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+
+            await asm2bom.run(swApp, swModel, "管件");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"方管 BOM 导出失败：{ex.Message}");
+            swApp?.SendMsgToUser($"方管 BOM 导出失败：{ex.Message}");
+        }
+    }
+
+    [SolidWorksAddinStudy.Command(1022, "导出BOM（钣金）", "仅导出装配体中的钣金件BOM到Excel", "export_bom_sheet", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private async void SheetMetal2bom()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+
+            await asm2bom.run(swApp, swModel, "钣金件");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"钣金 BOM 导出失败：{ex.Message}");
+            swApp?.SendMsgToUser($"钣金 BOM 导出失败：{ex.Message}");
+        }
+    }
+
+    [SolidWorksAddinStudy.Command(1013, "导出STEP（全部零件）", "将装配体中的全部零件批量导出为STEP", "export_step_all_parts", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void AsmBatchStep()
     {
         try
@@ -550,7 +624,7 @@ using ctool;
         }
     }
 
-    [Command(1020, "导出方管 STEP", "仅导出装配体中的方管零件为 STEP 格式", "asm2squaretube", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1020, "导出STEP（方管）", "仅导出装配体中名称包含“方管”的零件为STEP", "export_step_square_tube", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void AsmSquareTubeStep()
     {
        
@@ -590,8 +664,165 @@ using ctool;
     }
 
 
+    [SolidWorksAddinStudy.Command(1019, "工程图转DWG（全部DRW）", "按零件同名SLDDRW直接打开并批量转DWG（不再打开零件）", "asm_all_drw2dwg", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private void AsmAllDrw2Dwg()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+
+            if (swModel.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                swApp.SendMsgToUser("当前文档不是装配体");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(swModel.GetPathName()))
+            {
+                swApp.SendMsgToUser("当前装配体尚未保存，请先保存装配体");
+                return;
+            }
+
+            if (!asm2bom.HasGeneratedPartList())
+            {
+                int bomResult = asm2bom.run(swApp, swModel, "零件", false).GetAwaiter().GetResult();
+                if (bomResult != 0)
+                {
+                    swApp.SendMsgToUser("无法生成零件BOM缓存，终止批量转DWG");
+                    return;
+                }
+            }
+
+            List<BomPartExportInfo> bomParts = asm2bom.GetLastBomParts();
+            if (bomParts == null || bomParts.Count == 0)
+            {
+                swApp.SendMsgToUser("BOM缓存为空，未找到可处理零件");
+                return;
+            }
+
+            int successCount = 0;
+            int missingDrwCount = 0;
+            int failedCount = 0;
+            HashSet<string> processedDrwPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var bomPart in bomParts)
+            {
+                string rawPartPath = bomPart?.PartPath ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(rawPartPath))
+                {
+                    failedCount++;
+                    continue;
+                }
+
+                string partPath = NormalizePartPath(rawPartPath);
+                string drwPath = Path.ChangeExtension(partPath, ".slddrw");
+                if (string.IsNullOrWhiteSpace(drwPath) || !processedDrwPaths.Add(drwPath))
+                {
+                    continue;
+                }
+
+                if (!File.Exists(drwPath))
+                {
+                    missingDrwCount++;
+                    Debug.WriteLine($"未找到工程图: {drwPath}");
+                    continue;
+                }
+
+                int openErrors = 0;
+                int openWarnings = 0;
+                ModelDoc2 drwModel = swApp.OpenDoc6(
+                    drwPath,
+                    (int)swDocumentTypes_e.swDocDRAWING,
+                    (int)swOpenDocOptions_e.swOpenDocOptions_Silent,
+                    "",
+                    ref openErrors,
+                    ref openWarnings) as ModelDoc2;
+
+                if (drwModel == null)
+                {
+                    failedCount++;
+                    Debug.WriteLine($"打开工程图失败: {drwPath}, errors={openErrors}, warnings={openWarnings}");
+                    continue;
+                }
+
+                try
+                {
+                    drw2dwg.run(drwModel, swApp);
+                    successCount++;
+                }
+                catch (Exception ex)
+                {
+                    failedCount++;
+                    Debug.WriteLine($"转换失败: {drwPath}, {ex.Message}");
+                }
+                finally
+                {
+                    swApp.CloseDoc(drwModel.GetTitle());
+                }
+            }
+
+            string resultMessage = $"批量完成：成功 {successCount}，缺少工程图 {missingDrwCount}，失败 {failedCount}";
+            swApp.SendMsgToUser(resultMessage);
+            Debug.WriteLine(resultMessage);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"装配体批量 DRW 转 DWG 失败：{ex.Message}");
+            swApp?.SendMsgToUser($"装配体批量 DRW 转 DWG 失败：{ex.Message}");
+        }
+    }
+
+    private static string NormalizePartPath(string pathName)
+    {
+        if (string.IsNullOrWhiteSpace(pathName))
+        {
+            return string.Empty;
+        }
+
+        string originalPath = pathName.Trim().Replace(@"\\", "/");
+        if (File.Exists(originalPath))
+        {
+            return originalPath;
+        }
+
+        string fileName = Path.GetFileName(originalPath);
+        string directory = Path.GetDirectoryName(originalPath);
+        string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+        string extension = Path.GetExtension(fileName);
+
+        int lastDashIndex = fileNameWithoutExt.LastIndexOf('-');
+        if (lastDashIndex > 0 && lastDashIndex < fileNameWithoutExt.Length - 1)
+        {
+            string suffix = fileNameWithoutExt.Substring(lastDashIndex + 1);
+            if (int.TryParse(suffix, out _))
+            {
+                string compatName = fileNameWithoutExt.Substring(0, lastDashIndex) + extension;
+                string compatPath = Path.Combine(directory ?? string.Empty, compatName).Replace(@"\\", "/");
+                if (File.Exists(compatPath))
+                {
+                    return compatPath;
+                }
+            }
+        }
+
+        return originalPath;
+    }
+
+
   
-    [Command(1015, "复制DWG文件到剪贴板", "将当前文档对应的DWG文件路径复制到剪贴板", "copyfile", 0, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1015, "复制DWG文件到剪贴板", "将当前文档对应的DWG文件路径复制到剪贴板", "copyfile", 0, ShowOutputWindow = true)]
     private void CopyFileToClipboard()
     {
         try
@@ -679,7 +910,7 @@ using ctool;
         }
     }
 
-    [Command(1014, "装配体排版", "将装配体出图文件夹下的DWG文件进行自动排版", "asmdivider", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    [SolidWorksAddinStudy.Command(1014, "装配体排版", "将装配体出图文件夹下的DWG文件进行自动排版", "asmdivider", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private void AsmDivider()
     {
         try
@@ -703,7 +934,7 @@ using ctool;
             
             if (string.IsNullOrEmpty(assemblyPath))
             {
-                swApp.SendMsgToUser("当前装配体尚未保存，请先保存文档");
+                swApp.SendMsgToUser("当前装配体尚未保存，请先保存装配体");
                 return;
             }
 
@@ -714,11 +945,13 @@ using ctool;
                 return;
             }
 
-            string outputFolder = Path.Combine(assemblyDir, "出图");
-            
+            string folderName = Path.GetFileName(assemblyDir);
+            string outputRootName = string.IsNullOrWhiteSpace(folderName) ? "钣金" : $"{folderName}钣金";
+            string outputFolder = Path.Combine(assemblyDir, outputRootName);
+
             if (!Directory.Exists(outputFolder))
             {
-                swApp.SendMsgToUser($"出图文件夹不存在: {outputFolder}");
+                swApp.SendMsgToUser($"排版文件夹不存在: {outputFolder}");
                 return;
             }
 
@@ -733,9 +966,116 @@ using ctool;
         }
     }
 
+    [SolidWorksAddinStudy.Command(1017, "复制当前零件", "复制当前sldprt为新文件", "copy_current_sldprt", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
+    private void CopyCurrentSldprt()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            if (swModel == null)
+            {
+                swApp.SendMsgToUser("请先打开一个零件文档");
+                return;
+            }
+
+            if (swModel.GetType() != (int)swDocumentTypes_e.swDocPART)
+            {
+                swApp.SendMsgToUser("当前文档不是零件文档");
+                return;
+            }
+
+            string sourcePath = swModel.GetPathName();
+            if (string.IsNullOrWhiteSpace(sourcePath))
+            {
+                swApp.SendMsgToUser("当前零件尚未保存，请先保存后再复制");
+                return;
+            }
+
+            if (!File.Exists(sourcePath))
+            {
+                swApp.SendMsgToUser($"源文件不存在: {sourcePath}");
+                return;
+            }
+
+            string targetPath = BuildUniquePartCopyPath(sourcePath);
+            File.Copy(sourcePath, targetPath, false);
+
+            string targetName = Path.GetFileName(targetPath);
+            swApp.SendMsgToUser($"复制完成: {targetName}");
+            Debug.WriteLine($"已复制零件: {sourcePath} -> {targetPath}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"复制当前零件失败: {ex.Message}");
+            swApp?.SendMsgToUser($"复制当前零件失败: {ex.Message}");
+        }
+    }
+
+    private string BuildUniquePartCopyPath(string sourcePath)
+    {
+        string directory = Path.GetDirectoryName(sourcePath) ?? string.Empty;
+        string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(sourcePath);
+        string extension = Path.GetExtension(sourcePath);
+
+        string candidate = Path.Combine(directory, $"{fileNameWithoutExtension}_副本{extension}");
+        if (!File.Exists(candidate))
+        {
+            return candidate;
+        }
+
+        int index = 2;
+        while (true)
+        {
+            candidate = Path.Combine(directory, $"{fileNameWithoutExtension}_副本{index}{extension}");
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            index++;
+        }
+    }
+
+    [SolidWorksAddinStudy.Command(1018, "名称尺寸匹配替换", "检查名称尺寸与GetBox尺寸并自动替换", "check_name_size_match", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
+    private void CheckAssemblyNameSizeMatch()
+    {
+        try
+        {
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            if (swModel == null || swModel.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                swApp.SendMsgToUser("请先打开一个装配体文档");
+                return;
+            }
+
+            Console.WriteLine("=== 名称尺寸匹配/替换开始 ===");
+            var result = NameSizeMatchService.Run(swModel);
+            Console.WriteLine($"=== 完成: 识别 {result.ParsedCount} 个, 不匹配 {result.MismatchCount} 个, 已替换 {result.ReplacedCount} 个, 替换失败 {result.ReplaceFailCount} 个 ===");
+            swModel.EditRebuild3();
+            swApp.SendMsgToUser($"名称尺寸匹配完成：识别{result.ParsedCount}，不匹配{result.MismatchCount}，已替换{result.ReplacedCount}，失败{result.ReplaceFailCount}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"名称尺寸匹配检查失败: {ex.Message}");
+            swApp?.SendMsgToUser($"名称尺寸匹配检查失败: {ex.Message}");
+        }
+    }
 
 
-    [Command(1016, "标折弯尺寸", "自动标注选中视图的折弯尺寸", "dimension_bends", (int)swDocumentTypes_e.swDocDRAWING, ShowOutputWindow = true)]
+
+    [SolidWorksAddinStudy.Command(1016, "标折弯尺寸", "自动标注选中视图的折弯尺寸", "dimension_bends", (int)swDocumentTypes_e.swDocDRAWING, ShowOutputWindow = true)]
     private void DimensionBends()
     {
         try
@@ -766,87 +1106,6 @@ using ctool;
             swApp?.SendMsgToUser($"AddBendDimensions failed: {ex.Message}");
         }
     }
-
-    [Command(1090, "AI对话", "调用 ctool 的 AI Agent 进行对话测试", "ai_chat", 0, ShowOutputWindow = true)]
-    private async void AiChat()
-    {
-        try
-        {
-            ShowOutputWindow();
-            string prompt = ShowAiInputDialog();
-            if (string.IsNullOrWhiteSpace(prompt))
-            {
-                Console.WriteLine("已取消 AI 对话。");
-                return;
-            }
-
-            Console.WriteLine("\n[AI] 正在思考...");
-            var reply = await _aiAgent.ChatAsync(prompt);
-            Console.WriteLine($"\n[AI] {reply}\n");
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"AI 对话失败：{ex.Message}");
-            swApp?.SendMsgToUser($"AI 对话失败：{ex.Message}");
-        }
-    }
-
-    private string ShowAiInputDialog()
-    {
-        using (var form = new Form())
-        {
-            form.Text = "AI 对话输入";
-            form.Size = new Size(520, 180);
-            form.StartPosition = FormStartPosition.CenterScreen;
-            form.FormBorderStyle = FormBorderStyle.FixedDialog;
-            form.MaximizeBox = false;
-            form.MinimizeBox = false;
-
-            var label = new Label
-            {
-                Text = "请输入 AI 问题：",
-                Left = 12,
-                Top = 16,
-                Width = 480
-            };
-
-            var textBox = new TextBox
-            {
-                Left = 12,
-                Top = 42,
-                Width = 480
-            };
-
-            var okButton = new Button
-            {
-                Text = "发送",
-                Left = 332,
-                Top = 80,
-                Width = 75,
-                DialogResult = DialogResult.OK
-            };
-
-            var cancelButton = new Button
-            {
-                Text = "取消",
-                Left = 417,
-                Top = 80,
-                Width = 75,
-                DialogResult = DialogResult.Cancel
-            };
-
-            form.Controls.Add(label);
-            form.Controls.Add(textBox);
-            form.Controls.Add(okButton);
-            form.Controls.Add(cancelButton);
-            form.AcceptButton = okButton;
-            form.CancelButton = cancelButton;
-
-            return form.ShowDialog() == DialogResult.OK ? textBox.Text.Trim() : "";
-        }
-    }
-
-
 
     /// <summary>
     /// 从工程图更新对应零件的出图状态

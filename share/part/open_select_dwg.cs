@@ -34,7 +34,9 @@ namespace tools
             {
                 SheetMetalFeatureData swSheetMetalData = (SheetMetalFeatureData)swFeature.GetDefinition();
                 var thickness =  Math.Round(swSheetMetalData.Thickness*1000,2).ToString();
-                outputfile = directory + "\\"+"出图"+"\\" + "下料" + "\\" + thickness;
+                string folderName = Path.GetFileName(directory);
+                string outputRootName = string.IsNullOrWhiteSpace(folderName) ? "钣金" : $"{folderName}钣金";
+                outputfile = Path.Combine(directory, outputRootName, "下料", thickness);
                 if (!Directory.Exists(outputfile))
                 {
                     Directory.CreateDirectory(outputfile);
@@ -42,7 +44,7 @@ namespace tools
             }
  
 
-           var dwgFileName = outputfile + "\\" +  partname+"_"+body.Name + ".dwg";
+           var dwgFileName = Path.Combine(outputfile, partname + "_" + body.Name + ".dwg");
             if(File.Exists(dwgFileName))
             {
                 Process.Start(new ProcessStartInfo

@@ -2,6 +2,12 @@ using System;
 
 namespace SolidWorksAddinStudy
 {
+    public enum CommandSource
+    {
+        CommandBar = 0,
+        ContextMenu = 1
+    }
+
     /// <summary>
     /// 命令特性标记，用于声明式注册 SolidWorks 插件命令
     /// </summary>
@@ -14,6 +20,7 @@ namespace SolidWorksAddinStudy
         public string LocalizedName { get; set; }
         public int[] DocumentTypes { get; set; }
         public bool ShowOutputWindow { get; set; } = false;
+        public CommandSource Source { get; set; } = CommandSource.CommandBar;
         
         public CommandAttribute(int id, string name, string tooltip, string localized_name, params int[] documentTypes)
         {

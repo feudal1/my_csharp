@@ -18,13 +18,22 @@ namespace SolidWorksAddinStudy
         private readonly Button addProjectButton;
         private readonly Button removeProjectButton;
 
-        private readonly TextBox rollerTextBox;
-        private readonly TextBox pipeTextBox;
-        private readonly TextBox sheetMetalTextBox;
-        private readonly TextBox machiningTextBox;
-        private readonly TextBox purchaseTextBox;
-        private readonly TextBox bearingTextBox;
-        private readonly TextBox timingBeltTextBox;
+        private readonly TextBox rollerOutputTextBox;
+        private readonly TextBox rollerFollowUpTextBox;
+        private readonly TextBox pipeOutputTextBox;
+        private readonly TextBox pipeFollowUpTextBox;
+        private readonly TextBox sheetMetalOutputTextBox;
+        private readonly TextBox sheetMetalFollowUpTextBox;
+        private readonly TextBox machiningOutputTextBox;
+        private readonly TextBox machiningFollowUpTextBox;
+        private readonly TextBox purchaseOutputTextBox;
+        private readonly TextBox purchaseFollowUpTextBox;
+        private readonly TextBox bearingOutputTextBox;
+        private readonly TextBox bearingFollowUpTextBox;
+        private readonly TextBox timingBeltOutputTextBox;
+        private readonly TextBox timingBeltFollowUpTextBox;
+        private readonly TextBox countersinkMarkingOutputTextBox;
+        private readonly TextBox countersinkMarkingFollowUpTextBox;
         private readonly TextBox folderPathTextBox;
         private readonly Button chooseFolderButton;
         private readonly Button openFolderButton;
@@ -35,13 +44,15 @@ namespace SolidWorksAddinStudy
         private bool isLoadingProject;
 
         private readonly string saveFilePath;
+        private static readonly TimeSpan FollowUpReminderDelay = TimeSpan.FromDays(2);
 
         public WorkProjectTaskPaneControl()
         {
             saveFilePath = BuildSavePath();
 
             Dock = DockStyle.Fill;
-            MinimumSize = new System.Drawing.Size(420, 480);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            MinimumSize = new System.Drawing.Size(320, 240);
 
             var header = new Panel
             {
@@ -117,13 +128,16 @@ namespace SolidWorksAddinStudy
 
             var detailsPanel = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill,
-                ColumnCount = 2,
-                RowCount = 7,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 3,
+                RowCount = 9,
                 Padding = new Padding(8)
             };
             detailsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
-            detailsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            detailsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            detailsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
 
             var folderPanel = new Panel
             {
@@ -172,23 +186,63 @@ namespace SolidWorksAddinStudy
             openFolderButton.Click += OpenFolderButton_Click;
             folderPanel.Controls.Add(openFolderButton);
 
-            rollerTextBox = CreateDetailTextBox();
-            pipeTextBox = CreateDetailTextBox();
-            sheetMetalTextBox = CreateDetailTextBox();
-            machiningTextBox = CreateDetailTextBox();
-            purchaseTextBox = CreateDetailTextBox();
-            bearingTextBox = CreateDetailTextBox();
-            timingBeltTextBox = CreateDetailTextBox();
+            detailsPanel.Controls.Add(new Label
+            {
+                Text = "",
+                AutoSize = true,
+                Margin = new Padding(0, 0, 4, 6)
+            }, 0, 0);
+            detailsPanel.Controls.Add(new Label
+            {
+                Text = "出图",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 4, 6)
+            }, 1, 0);
+            detailsPanel.Controls.Add(new Label
+            {
+                Text = "跟进",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 4, 6)
+            }, 2, 0);
 
-            AddDetailRow(detailsPanel, 0, "滚筒出图", rollerTextBox);
-            AddDetailRow(detailsPanel, 1, "管件出图", pipeTextBox);
-            AddDetailRow(detailsPanel, 2, "钣金出图", sheetMetalTextBox);
-            AddDetailRow(detailsPanel, 3, "机加出图", machiningTextBox);
-            AddDetailRow(detailsPanel, 4, "外购采购", purchaseTextBox);
-            AddDetailRow(detailsPanel, 5, "轴承采购", bearingTextBox);
-            AddDetailRow(detailsPanel, 6, "同步带采购", timingBeltTextBox);
+            rollerOutputTextBox = CreateDetailTextBox();
+            rollerFollowUpTextBox = CreateDetailTextBox();
+            pipeOutputTextBox = CreateDetailTextBox();
+            pipeFollowUpTextBox = CreateDetailTextBox();
+            sheetMetalOutputTextBox = CreateDetailTextBox();
+            sheetMetalFollowUpTextBox = CreateDetailTextBox();
+            machiningOutputTextBox = CreateDetailTextBox();
+            machiningFollowUpTextBox = CreateDetailTextBox();
+            purchaseOutputTextBox = CreateDetailTextBox();
+            purchaseFollowUpTextBox = CreateDetailTextBox();
+            bearingOutputTextBox = CreateDetailTextBox();
+            bearingFollowUpTextBox = CreateDetailTextBox();
+            timingBeltOutputTextBox = CreateDetailTextBox();
+            timingBeltFollowUpTextBox = CreateDetailTextBox();
+            countersinkMarkingOutputTextBox = CreateDetailTextBox();
+            countersinkMarkingFollowUpTextBox = CreateDetailTextBox();
 
-            body.Panel2.Controls.Add(detailsPanel);
+            AddDetailRow(detailsPanel, 1, "滚筒出图", rollerOutputTextBox, rollerFollowUpTextBox);
+            AddDetailRow(detailsPanel, 2, "管件出图", pipeOutputTextBox, pipeFollowUpTextBox);
+            AddDetailRow(detailsPanel, 3, "钣金出图", sheetMetalOutputTextBox, sheetMetalFollowUpTextBox);
+            AddDetailRow(detailsPanel, 4, "机加出图", machiningOutputTextBox, machiningFollowUpTextBox);
+            AddDetailRow(detailsPanel, 5, "外购采购", purchaseOutputTextBox, purchaseFollowUpTextBox);
+            AddDetailRow(detailsPanel, 6, "轴承采购", bearingOutputTextBox, bearingFollowUpTextBox);
+            AddDetailRow(detailsPanel, 7, "同步带采购", timingBeltOutputTextBox, timingBeltFollowUpTextBox);
+            AddDetailRow(detailsPanel, 8, "打标沉孔", countersinkMarkingOutputTextBox, countersinkMarkingFollowUpTextBox);
+
+            var detailsScrollPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+            detailsScrollPanel.Controls.Add(detailsPanel);
+            detailsScrollPanel.Resize += (sender, args) => RefreshDetailsScrollRange(detailsScrollPanel, detailsPanel);
+            detailsPanel.SizeChanged += (sender, args) => RefreshDetailsScrollRange(detailsScrollPanel, detailsPanel);
+
+            body.Panel2.Controls.Add(detailsScrollPanel);
             body.Panel2.Controls.Add(folderPanel);
 
             Controls.Add(body);
@@ -198,6 +252,7 @@ namespace SolidWorksAddinStudy
             LoadProjectsFromLocal();
             RefreshProjectList();
             UpdateDetailAreaEnabledState();
+            RefreshDetailsScrollRange(detailsScrollPanel, detailsPanel);
         }
 
         private static string BuildSavePath()
@@ -214,9 +269,9 @@ namespace SolidWorksAddinStudy
             return Path.Combine(dir, "work_projects.xml");
         }
 
-        private void AddDetailRow(TableLayoutPanel panel, int rowIndex, string title, TextBox textBox)
+        private void AddDetailRow(TableLayoutPanel panel, int rowIndex, string title, TextBox outputTextBox, TextBox followUpTextBox)
         {
-            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F / panel.RowCount));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 84F));
 
             var label = new Label
             {
@@ -227,7 +282,8 @@ namespace SolidWorksAddinStudy
             };
 
             panel.Controls.Add(label, 0, rowIndex);
-            panel.Controls.Add(textBox, 1, rowIndex);
+            panel.Controls.Add(outputTextBox, 1, rowIndex);
+            panel.Controls.Add(followUpTextBox, 2, rowIndex);
         }
 
         private static TextBox CreateDetailTextBox()
@@ -240,15 +296,30 @@ namespace SolidWorksAddinStudy
             };
         }
 
+        private static void RefreshDetailsScrollRange(Panel scrollPanel, TableLayoutPanel detailsPanel)
+        {
+            int contentHeight = detailsPanel.PreferredSize.Height + 8;
+            scrollPanel.AutoScrollMinSize = new System.Drawing.Size(0, contentHeight);
+        }
+
         private void HookDetailTextChangedEvents()
         {
-            rollerTextBox.TextChanged += DetailTextBox_TextChanged;
-            pipeTextBox.TextChanged += DetailTextBox_TextChanged;
-            sheetMetalTextBox.TextChanged += DetailTextBox_TextChanged;
-            machiningTextBox.TextChanged += DetailTextBox_TextChanged;
-            purchaseTextBox.TextChanged += DetailTextBox_TextChanged;
-            bearingTextBox.TextChanged += DetailTextBox_TextChanged;
-            timingBeltTextBox.TextChanged += DetailTextBox_TextChanged;
+            rollerOutputTextBox.TextChanged += DetailTextBox_TextChanged;
+            rollerFollowUpTextBox.TextChanged += DetailTextBox_TextChanged;
+            pipeOutputTextBox.TextChanged += DetailTextBox_TextChanged;
+            pipeFollowUpTextBox.TextChanged += DetailTextBox_TextChanged;
+            sheetMetalOutputTextBox.TextChanged += DetailTextBox_TextChanged;
+            sheetMetalFollowUpTextBox.TextChanged += DetailTextBox_TextChanged;
+            machiningOutputTextBox.TextChanged += DetailTextBox_TextChanged;
+            machiningFollowUpTextBox.TextChanged += DetailTextBox_TextChanged;
+            purchaseOutputTextBox.TextChanged += DetailTextBox_TextChanged;
+            purchaseFollowUpTextBox.TextChanged += DetailTextBox_TextChanged;
+            bearingOutputTextBox.TextChanged += DetailTextBox_TextChanged;
+            bearingFollowUpTextBox.TextChanged += DetailTextBox_TextChanged;
+            timingBeltOutputTextBox.TextChanged += DetailTextBox_TextChanged;
+            timingBeltFollowUpTextBox.TextChanged += DetailTextBox_TextChanged;
+            countersinkMarkingOutputTextBox.TextChanged += DetailTextBox_TextChanged;
+            countersinkMarkingFollowUpTextBox.TextChanged += DetailTextBox_TextChanged;
         }
 
         private void ProjectNameTextBox_KeyDown(object sender, KeyEventArgs e)
@@ -307,13 +378,37 @@ namespace SolidWorksAddinStudy
                 return;
             }
 
-            current.RollerDrawing = rollerTextBox.Text;
-            current.PipeDrawing = pipeTextBox.Text;
-            current.SheetMetalDrawing = sheetMetalTextBox.Text;
-            current.MachiningDrawing = machiningTextBox.Text;
-            current.PurchasedProcurement = purchaseTextBox.Text;
-            current.BearingProcurement = bearingTextBox.Text;
-            current.TimingBeltProcurement = timingBeltTextBox.Text;
+            UpdateDrawingAndFollowUp(current.RollerDrawing, rollerOutputTextBox.Text, rollerFollowUpTextBox.Text, t => current.RollerDrawingUpdatedAt = t, out string rollerDrawing, out string rollerFollowUp);
+            current.RollerDrawing = rollerDrawing;
+            current.RollerFollowUp = rollerFollowUp;
+
+            UpdateDrawingAndFollowUp(current.PipeDrawing, pipeOutputTextBox.Text, pipeFollowUpTextBox.Text, t => current.PipeDrawingUpdatedAt = t, out string pipeDrawing, out string pipeFollowUp);
+            current.PipeDrawing = pipeDrawing;
+            current.PipeFollowUp = pipeFollowUp;
+
+            UpdateDrawingAndFollowUp(current.SheetMetalDrawing, sheetMetalOutputTextBox.Text, sheetMetalFollowUpTextBox.Text, t => current.SheetMetalDrawingUpdatedAt = t, out string sheetMetalDrawing, out string sheetMetalFollowUp);
+            current.SheetMetalDrawing = sheetMetalDrawing;
+            current.SheetMetalFollowUp = sheetMetalFollowUp;
+
+            UpdateDrawingAndFollowUp(current.MachiningDrawing, machiningOutputTextBox.Text, machiningFollowUpTextBox.Text, t => current.MachiningDrawingUpdatedAt = t, out string machiningDrawing, out string machiningFollowUp);
+            current.MachiningDrawing = machiningDrawing;
+            current.MachiningFollowUp = machiningFollowUp;
+
+            UpdateDrawingAndFollowUp(current.PurchasedProcurement, purchaseOutputTextBox.Text, purchaseFollowUpTextBox.Text, t => current.PurchasedProcurementUpdatedAt = t, out string purchasedProcurement, out string purchasedFollowUp);
+            current.PurchasedProcurement = purchasedProcurement;
+            current.PurchasedFollowUp = purchasedFollowUp;
+
+            UpdateDrawingAndFollowUp(current.BearingProcurement, bearingOutputTextBox.Text, bearingFollowUpTextBox.Text, t => current.BearingProcurementUpdatedAt = t, out string bearingProcurement, out string bearingFollowUp);
+            current.BearingProcurement = bearingProcurement;
+            current.BearingFollowUp = bearingFollowUp;
+
+            UpdateDrawingAndFollowUp(current.TimingBeltProcurement, timingBeltOutputTextBox.Text, timingBeltFollowUpTextBox.Text, t => current.TimingBeltProcurementUpdatedAt = t, out string timingBeltProcurement, out string timingBeltFollowUp);
+            current.TimingBeltProcurement = timingBeltProcurement;
+            current.TimingBeltFollowUp = timingBeltFollowUp;
+
+            UpdateDrawingAndFollowUp(current.CountersinkMarkingDrawing, countersinkMarkingOutputTextBox.Text, countersinkMarkingFollowUpTextBox.Text, t => current.CountersinkMarkingDrawingUpdatedAt = t, out string countersinkMarkingDrawing, out string countersinkMarkingFollowUp);
+            current.CountersinkMarkingDrawing = countersinkMarkingDrawing;
+            current.CountersinkMarkingFollowUp = countersinkMarkingFollowUp;
 
             SaveProjectsToLocal();
             statusLabel.Text = $"已保存: {current.ProjectName}";
@@ -447,25 +542,43 @@ namespace SolidWorksAddinStudy
                 if (current == null)
                 {
                     folderPathTextBox.Text = string.Empty;
-                    rollerTextBox.Text = string.Empty;
-                    pipeTextBox.Text = string.Empty;
-                    sheetMetalTextBox.Text = string.Empty;
-                    machiningTextBox.Text = string.Empty;
-                    purchaseTextBox.Text = string.Empty;
-                    bearingTextBox.Text = string.Empty;
-                    timingBeltTextBox.Text = string.Empty;
+                    rollerOutputTextBox.Text = string.Empty;
+                    rollerFollowUpTextBox.Text = string.Empty;
+                    pipeOutputTextBox.Text = string.Empty;
+                    pipeFollowUpTextBox.Text = string.Empty;
+                    sheetMetalOutputTextBox.Text = string.Empty;
+                    sheetMetalFollowUpTextBox.Text = string.Empty;
+                    machiningOutputTextBox.Text = string.Empty;
+                    machiningFollowUpTextBox.Text = string.Empty;
+                    purchaseOutputTextBox.Text = string.Empty;
+                    purchaseFollowUpTextBox.Text = string.Empty;
+                    bearingOutputTextBox.Text = string.Empty;
+                    bearingFollowUpTextBox.Text = string.Empty;
+                    timingBeltOutputTextBox.Text = string.Empty;
+                    timingBeltFollowUpTextBox.Text = string.Empty;
+                    countersinkMarkingOutputTextBox.Text = string.Empty;
+                    countersinkMarkingFollowUpTextBox.Text = string.Empty;
                     statusLabel.Text = "请选择或新建项目";
                     return;
                 }
 
                 folderPathTextBox.Text = current.FolderPath ?? string.Empty;
-                rollerTextBox.Text = current.RollerDrawing ?? string.Empty;
-                pipeTextBox.Text = current.PipeDrawing ?? string.Empty;
-                sheetMetalTextBox.Text = current.SheetMetalDrawing ?? string.Empty;
-                machiningTextBox.Text = current.MachiningDrawing ?? string.Empty;
-                purchaseTextBox.Text = current.PurchasedProcurement ?? string.Empty;
-                bearingTextBox.Text = current.BearingProcurement ?? string.Empty;
-                timingBeltTextBox.Text = current.TimingBeltProcurement ?? string.Empty;
+                rollerOutputTextBox.Text = current.RollerDrawing ?? string.Empty;
+                rollerFollowUpTextBox.Text = current.RollerFollowUp ?? string.Empty;
+                pipeOutputTextBox.Text = current.PipeDrawing ?? string.Empty;
+                pipeFollowUpTextBox.Text = current.PipeFollowUp ?? string.Empty;
+                sheetMetalOutputTextBox.Text = current.SheetMetalDrawing ?? string.Empty;
+                sheetMetalFollowUpTextBox.Text = current.SheetMetalFollowUp ?? string.Empty;
+                machiningOutputTextBox.Text = current.MachiningDrawing ?? string.Empty;
+                machiningFollowUpTextBox.Text = current.MachiningFollowUp ?? string.Empty;
+                purchaseOutputTextBox.Text = current.PurchasedProcurement ?? string.Empty;
+                purchaseFollowUpTextBox.Text = current.PurchasedFollowUp ?? string.Empty;
+                bearingOutputTextBox.Text = current.BearingProcurement ?? string.Empty;
+                bearingFollowUpTextBox.Text = current.BearingFollowUp ?? string.Empty;
+                timingBeltOutputTextBox.Text = current.TimingBeltProcurement ?? string.Empty;
+                timingBeltFollowUpTextBox.Text = current.TimingBeltFollowUp ?? string.Empty;
+                countersinkMarkingOutputTextBox.Text = current.CountersinkMarkingDrawing ?? string.Empty;
+                countersinkMarkingFollowUpTextBox.Text = current.CountersinkMarkingFollowUp ?? string.Empty;
                 statusLabel.Text = $"当前项目: {current.ProjectName}";
             }
             finally
@@ -481,13 +594,22 @@ namespace SolidWorksAddinStudy
             folderPathTextBox.Enabled = enabled;
             chooseFolderButton.Enabled = enabled;
             openFolderButton.Enabled = enabled;
-            rollerTextBox.Enabled = enabled;
-            pipeTextBox.Enabled = enabled;
-            sheetMetalTextBox.Enabled = enabled;
-            machiningTextBox.Enabled = enabled;
-            purchaseTextBox.Enabled = enabled;
-            bearingTextBox.Enabled = enabled;
-            timingBeltTextBox.Enabled = enabled;
+            rollerOutputTextBox.Enabled = enabled;
+            rollerFollowUpTextBox.Enabled = enabled;
+            pipeOutputTextBox.Enabled = enabled;
+            pipeFollowUpTextBox.Enabled = enabled;
+            sheetMetalOutputTextBox.Enabled = enabled;
+            sheetMetalFollowUpTextBox.Enabled = enabled;
+            machiningOutputTextBox.Enabled = enabled;
+            machiningFollowUpTextBox.Enabled = enabled;
+            purchaseOutputTextBox.Enabled = enabled;
+            purchaseFollowUpTextBox.Enabled = enabled;
+            bearingOutputTextBox.Enabled = enabled;
+            bearingFollowUpTextBox.Enabled = enabled;
+            timingBeltOutputTextBox.Enabled = enabled;
+            timingBeltFollowUpTextBox.Enabled = enabled;
+            countersinkMarkingOutputTextBox.Enabled = enabled;
+            countersinkMarkingFollowUpTextBox.Enabled = enabled;
             removeProjectButton.Enabled = enabled;
         }
 
@@ -560,6 +682,7 @@ namespace SolidWorksAddinStudy
                     {
                         projects.Clear();
                         projects.AddRange(store.Projects);
+                        NormalizeLegacyReminderTimestamps();
                     }
                 }
             }
@@ -567,6 +690,171 @@ namespace SolidWorksAddinStudy
             {
                 Debug.WriteLine($"读取工作项目失败: {ex.Message}");
             }
+        }
+
+        public void PromptFollowUpRemindersAtStartup()
+        {
+            var dueItems = CollectDueFollowUps();
+            if (dueItems.Count == 0)
+            {
+                return;
+            }
+
+            string message = "以下项目出图已超过2天且尚未填写跟进，是否现在跟进？\n\n"
+                           + string.Join("\n", dueItems);
+
+            DialogResult result = MessageBox.Show(
+                message,
+                "工作项目跟进提醒",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (result == DialogResult.Yes)
+            {
+                FocusProjectByName(dueItems[0].ProjectName);
+            }
+        }
+
+        private void UpdateDrawingAndFollowUp(
+            string oldDrawingValue,
+            string newDrawingValue,
+            string newFollowUpValue,
+            Action<DateTime> setUpdatedAt,
+            out string drawingValue,
+            out string followUpValue)
+        {
+            drawingValue = newDrawingValue ?? string.Empty;
+            followUpValue = newFollowUpValue ?? string.Empty;
+
+            if (!string.Equals((oldDrawingValue ?? string.Empty), drawingValue, StringComparison.Ordinal))
+            {
+                if (string.IsNullOrWhiteSpace(drawingValue))
+                {
+                    setUpdatedAt(DateTime.MinValue);
+                }
+                else
+                {
+                    setUpdatedAt(DateTime.Now);
+                }
+            }
+        }
+
+        private void NormalizeLegacyReminderTimestamps()
+        {
+            bool changed = false;
+            DateTime now = DateTime.Now;
+
+            foreach (var item in projects)
+            {
+                changed |= EnsureLegacyTimestamp(item.RollerDrawing, item.RollerDrawingUpdatedAt, t => item.RollerDrawingUpdatedAt = t, now);
+                changed |= EnsureLegacyTimestamp(item.PipeDrawing, item.PipeDrawingUpdatedAt, t => item.PipeDrawingUpdatedAt = t, now);
+                changed |= EnsureLegacyTimestamp(item.SheetMetalDrawing, item.SheetMetalDrawingUpdatedAt, t => item.SheetMetalDrawingUpdatedAt = t, now);
+                changed |= EnsureLegacyTimestamp(item.MachiningDrawing, item.MachiningDrawingUpdatedAt, t => item.MachiningDrawingUpdatedAt = t, now);
+                changed |= EnsureLegacyTimestamp(item.PurchasedProcurement, item.PurchasedProcurementUpdatedAt, t => item.PurchasedProcurementUpdatedAt = t, now);
+                changed |= EnsureLegacyTimestamp(item.BearingProcurement, item.BearingProcurementUpdatedAt, t => item.BearingProcurementUpdatedAt = t, now);
+                changed |= EnsureLegacyTimestamp(item.TimingBeltProcurement, item.TimingBeltProcurementUpdatedAt, t => item.TimingBeltProcurementUpdatedAt = t, now);
+                changed |= EnsureLegacyTimestamp(item.CountersinkMarkingDrawing, item.CountersinkMarkingDrawingUpdatedAt, t => item.CountersinkMarkingDrawingUpdatedAt = t, now);
+            }
+
+            if (changed)
+            {
+                SaveProjectsToLocal();
+            }
+        }
+
+        private static bool EnsureLegacyTimestamp(string drawingValue, DateTime timestamp, Action<DateTime> setter, DateTime now)
+        {
+            if (string.IsNullOrWhiteSpace(drawingValue) || timestamp > DateTime.MinValue)
+            {
+                return false;
+            }
+
+            setter(now);
+            return true;
+        }
+
+        private List<FollowUpDueItem> CollectDueFollowUps()
+        {
+            var dueItems = new List<FollowUpDueItem>();
+            DateTime now = DateTime.Now;
+
+            foreach (var project in projects)
+            {
+                AddDueItemIfNeeded(dueItems, project.ProjectName, "滚筒出图", project.RollerDrawing, project.RollerFollowUp, project.RollerDrawingUpdatedAt, now);
+                AddDueItemIfNeeded(dueItems, project.ProjectName, "管件出图", project.PipeDrawing, project.PipeFollowUp, project.PipeDrawingUpdatedAt, now);
+                AddDueItemIfNeeded(dueItems, project.ProjectName, "钣金出图", project.SheetMetalDrawing, project.SheetMetalFollowUp, project.SheetMetalDrawingUpdatedAt, now);
+                AddDueItemIfNeeded(dueItems, project.ProjectName, "机加出图", project.MachiningDrawing, project.MachiningFollowUp, project.MachiningDrawingUpdatedAt, now);
+                AddDueItemIfNeeded(dueItems, project.ProjectName, "外购采购", project.PurchasedProcurement, project.PurchasedFollowUp, project.PurchasedProcurementUpdatedAt, now);
+                AddDueItemIfNeeded(dueItems, project.ProjectName, "轴承采购", project.BearingProcurement, project.BearingFollowUp, project.BearingProcurementUpdatedAt, now);
+                AddDueItemIfNeeded(dueItems, project.ProjectName, "同步带采购", project.TimingBeltProcurement, project.TimingBeltFollowUp, project.TimingBeltProcurementUpdatedAt, now);
+                AddDueItemIfNeeded(dueItems, project.ProjectName, "打标沉孔", project.CountersinkMarkingDrawing, project.CountersinkMarkingFollowUp, project.CountersinkMarkingDrawingUpdatedAt, now);
+            }
+
+            return dueItems;
+        }
+
+        private void AddDueItemIfNeeded(
+            List<FollowUpDueItem> dueItems,
+            string projectName,
+            string fieldTitle,
+            string drawingValue,
+            string followUpValue,
+            DateTime drawingUpdatedAt,
+            DateTime now)
+        {
+            if (string.IsNullOrWhiteSpace(drawingValue))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(followUpValue))
+            {
+                return;
+            }
+
+            if (drawingUpdatedAt <= DateTime.MinValue)
+            {
+                return;
+            }
+
+            if ((now - drawingUpdatedAt) < FollowUpReminderDelay)
+            {
+                return;
+            }
+
+            dueItems.Add(new FollowUpDueItem
+            {
+                ProjectName = projectName,
+                Label = fieldTitle
+            });
+        }
+
+        private void FocusProjectByName(string projectName)
+        {
+            if (string.IsNullOrWhiteSpace(projectName))
+            {
+                return;
+            }
+
+            for (int i = 0; i < projects.Count; i++)
+            {
+                if (string.Equals(projects[i].ProjectName, projectName, StringComparison.OrdinalIgnoreCase))
+                {
+                    projectListBox.SelectedIndex = i;
+                    return;
+                }
+            }
+        }
+    }
+
+    internal sealed class FollowUpDueItem
+    {
+        public string ProjectName { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+
+        public override string ToString()
+        {
+            return $"{ProjectName} - {Label}";
         }
     }
 
@@ -582,11 +870,28 @@ namespace SolidWorksAddinStudy
         public string ProjectName { get; set; } = string.Empty;
         public string FolderPath { get; set; } = string.Empty;
         public string RollerDrawing { get; set; } = string.Empty;
+        public DateTime RollerDrawingUpdatedAt { get; set; } = DateTime.MinValue;
+        public string RollerFollowUp { get; set; } = string.Empty;
         public string PipeDrawing { get; set; } = string.Empty;
+        public DateTime PipeDrawingUpdatedAt { get; set; } = DateTime.MinValue;
+        public string PipeFollowUp { get; set; } = string.Empty;
         public string SheetMetalDrawing { get; set; } = string.Empty;
+        public DateTime SheetMetalDrawingUpdatedAt { get; set; } = DateTime.MinValue;
+        public string SheetMetalFollowUp { get; set; } = string.Empty;
         public string MachiningDrawing { get; set; } = string.Empty;
+        public DateTime MachiningDrawingUpdatedAt { get; set; } = DateTime.MinValue;
+        public string MachiningFollowUp { get; set; } = string.Empty;
         public string PurchasedProcurement { get; set; } = string.Empty;
+        public DateTime PurchasedProcurementUpdatedAt { get; set; } = DateTime.MinValue;
+        public string PurchasedFollowUp { get; set; } = string.Empty;
         public string BearingProcurement { get; set; } = string.Empty;
+        public DateTime BearingProcurementUpdatedAt { get; set; } = DateTime.MinValue;
+        public string BearingFollowUp { get; set; } = string.Empty;
         public string TimingBeltProcurement { get; set; } = string.Empty;
+        public DateTime TimingBeltProcurementUpdatedAt { get; set; } = DateTime.MinValue;
+        public string TimingBeltFollowUp { get; set; } = string.Empty;
+        public string CountersinkMarkingDrawing { get; set; } = string.Empty;
+        public DateTime CountersinkMarkingDrawingUpdatedAt { get; set; } = DateTime.MinValue;
+        public string CountersinkMarkingFollowUp { get; set; } = string.Empty;
     }
 }

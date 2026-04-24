@@ -6,7 +6,7 @@
             "request": "launch",
             "preLaunchTask": "build",
             "name": ".NET Core Launch (console)",
-            "program": "${workspaceFolder}/ctools/bin/Debug/net9.0-windows/ctool.dll",
+            "program": "${workspaceFolder}/ctools/bin/Debug/net9.0-windows/ai.dll",
             "args": [],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,
@@ -23,52 +23,22 @@
         {
             "name": "sw_plugin: Launch SolidWorks (C:\\Program Files)",
             "type": "coreclr",
-            "request": "launch",
-            "preLaunchTask": "build-sw-plugin",
-            "program": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SLDWORKS.exe",
-            "args": [],
-            "cwd": "${workspaceFolder}/sw_plugin",
-            "stopAtEntry": false,
-            "pipeTransport": {
-                "pipeCwd": "${workspaceFolder}",
-                "pipeProgram": "cmd",
-                "pipeArgs": ["/c"],
-                "debuggerPath": "C:\\netcoredbg\\netcoredbg.exe",
-                "debuggerArgs": ["--interpreter=vscode"],
-                "quoteArgs": true
-            }
+            "request": "attach",
+            "preLaunchTask": "start-sldworks-programfiles",
+            "processId": "${command:pickProcess}"
         },
         {
             "name": "sw_plugin: Launch SolidWorks (E:\\sw)",
             "type": "coreclr",
-            "request": "launch",
-            "preLaunchTask": "build-sw-plugin",
-            "program": "E:\\sw\\SOLIDWORKS\\SLDWORKS.exe",
-            "args": [],
-            "cwd": "${workspaceFolder}/sw_plugin",
-            "stopAtEntry": false,
-            "pipeTransport": {
-                "pipeCwd": "${workspaceFolder}",
-                "pipeProgram": "cmd",
-                "pipeArgs": ["/c"],
-                "debuggerPath": "C:\\netcoredbg\\netcoredbg.exe",
-                "debuggerArgs": ["--interpreter=vscode"],
-                "quoteArgs": true
-            }
+            "request": "attach",
+            "preLaunchTask": "start-sldworks-e-drive",
+            "processId": "${command:pickProcess}"
         },
         {
             "name": "sw_plugin: Attach to SolidWorks",
             "type": "coreclr",
             "request": "attach",
-            "processName": "SLDWORKS",
-            "pipeTransport": {
-                "pipeCwd": "${workspaceFolder}",
-                "pipeProgram": "cmd",
-                "pipeArgs": ["/c"],
-                "debuggerPath": "C:\\netcoredbg\\netcoredbg.exe",
-                "debuggerArgs": ["--interpreter=vscode"],
-                "quoteArgs": true
-            }
+            "processId": "${command:pickProcess}"
         }
     ]
 }

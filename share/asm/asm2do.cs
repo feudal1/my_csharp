@@ -46,7 +46,7 @@ namespace tools
                 if (!asm2bom.HasGeneratedPartList())
                 {
                     Console.WriteLine("BOM清单未生成，先执行一次 asm2bom 生成清单...");
-                    int bomResult = asm2bom.run(swApp, swModel, true, false).GetAwaiter().GetResult();
+                    int bomResult = asm2bom.run(swApp, swModel, "零件", false).GetAwaiter().GetResult();
                     if (bomResult != 0)
                     {
                         Console.WriteLine("错误：无法通过 asm2bom 生成零件清单。");
@@ -91,11 +91,11 @@ namespace tools
                         }
                     }
 
-                    string cleanedPath = CleanFilePath(bomPart.PartPath);
-                    if (!partsToProcess.ContainsKey(cleanedPath))
+                    string resolvedPath = ResolvePartPath(bomPart.PartPath);
+                    if (!partsToProcess.ContainsKey(resolvedPath))
                     {
-                        partsToProcess[cleanedPath] = partName;
-                        Debug.WriteLine($"[BOM缓存] 找到零件: {partName}, 路径: {cleanedPath}");
+                        partsToProcess[resolvedPath] = partName;
+                        Debug.WriteLine($"[BOM缓存] 找到零件: {partName}, 路径: {resolvedPath}");
                     }
                 }
                 
@@ -120,13 +120,15 @@ namespace tools
                     Console.WriteLine($"[{processedCount}/{totalCount}] 正在处理: {partName}");
                     
                     // 打开零件文档
+                    int openErrors = 0;
+                    int openWarnings = 0;
                     ModelDoc2 partDoc = (ModelDoc2)swApp.OpenDoc6(
                         partPath, 
                         (int)swDocumentTypes_e.swDocPART, 
                         (int)swOpenDocOptions_e.swOpenDocOptions_Silent, 
                         "", 
-                        0, 
-                        0
+                        ref openErrors, 
+                        ref openWarnings
                     );
                     
                     if (partDoc != null)
@@ -156,7 +158,7 @@ namespace tools
                     }
                     else
                     {
-                        Console.WriteLine($"警告：无法打开零件 {partName}");
+                        Console.WriteLine($"警告：无法打开零件 {partName}，路径: {partPath}，errors={openErrors}, warnings={openWarnings}");
                     }
                 }
 
@@ -187,28 +189,42 @@ namespace tools
         /// <summary>
         /// 清理文件路径：去掉末尾的"-数字"后缀
         /// </summary>
-        static private string CleanFilePath(string pathName)
+        static private string ResolvePartPath(string pathName)
         {
-            string docname = pathName.Replace(@"\\", "/");
-            string fileName = Path.GetFileName(docname);
-            string directory = Path.GetDirectoryName(docname);
+            if (string.IsNullOrWhiteSpace(pathName))
+            {
+                return string.Empty;
+            }
+
+            string originalPath = pathName.Trim().Replace(@"\\", "/");
+            if (File.Exists(originalPath))
+            {
+                return originalPath;
+            }
+
+            // 兼容历史逻辑：仅在原始路径不存在时，尝试去掉末尾 "-数字" 后缀
+            string fileName = Path.GetFileName(originalPath);
+            string directory = Path.GetDirectoryName(originalPath);
             string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
             string extension = Path.GetExtension(fileName);
-            
-            // 去掉文件名末尾的"-数字"部分（例如："零件名-1" -> "零件名"）
+
             int lastDashIndex = fileNameWithoutExt.LastIndexOf('-');
             if (lastDashIndex > 0 && lastDashIndex < fileNameWithoutExt.Length - 1)
             {
                 string suffix = fileNameWithoutExt.Substring(lastDashIndex + 1);
                 if (int.TryParse(suffix, out _))
                 {
-                    fileNameWithoutExt = fileNameWithoutExt.Substring(0, lastDashIndex);
+                    string compatName = fileNameWithoutExt.Substring(0, lastDashIndex) + extension;
+                    string compatPath = Path.Combine(directory ?? string.Empty, compatName).Replace(@"\\", "/");
+                    if (File.Exists(compatPath))
+                    {
+                        return compatPath;
+                    }
                 }
             }
-            
-            // 重新组合完整的文件路径
-            string cleanedFileName = fileNameWithoutExt + extension;
-            return Path.Combine(directory, cleanedFileName).Replace(@"\\", "/");
+
+            // 文件都不存在时，返回原始路径，便于上层输出准确错误定位
+            return originalPath;
         }
         
         /// <summary>

@@ -12,6 +12,8 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.Reflection;
 using System.Linq;
+using System.Text;
+using Newtonsoft.Json;
    namespace SolidWorksAddinStudy
 {
    
@@ -19,6 +21,7 @@ using System.Linq;
 {
      // 命令注册表，存储所有通过装饰器注册的命令
      private static Dictionary<int, MethodInfo> _commandRegistry = new Dictionary<int, MethodInfo>();
+     private static readonly object _commandActionLogLock = new object();
      
      /// <summary>
      /// 初始化命令注册表，扫描当前类中所有标记了 [Command] 特性的方法
@@ -28,13 +31,13 @@ using System.Linq;
          _commandRegistry.Clear();
          var type = this.GetType();
          
-         foreach (var method in type.GetMethods(BindingFlags.NonPublic | BindingFlags.Instance))
+        foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
          {
-             var attr = method.GetCustomAttribute<CommandAttribute>();
+            var attr = method.GetCustomAttribute<SolidWorksAddinStudy.CommandAttribute>();
              if (attr != null)
              {
                  _commandRegistry[attr.Id] = method;
-                 Debug.WriteLine($"[命令注册] ID:{attr.Id}, 名称:{attr.Name}");
+                Debug.WriteLine($"[命令注册] ID:{attr.Id}, 名称:{attr.Name}, 来源:{attr.Source}");
              }
          }
      }
@@ -63,9 +66,14 @@ using System.Linq;
         }
 
         /// <summary>
-        /// 按命令名执行插件命令（供 ctool / AI 桥接层调用）
+        /// 按命令名执行插件命令（供 ai / AI 桥接层调用）
         /// </summary>
         public bool ExecuteCommandByName(string commandName)
+        {
+            return ExecuteCommandByName(commandName, null);
+        }
+
+        public bool ExecuteCommandByName(string commandName, CommandSource? source)
         {
             if (string.IsNullOrWhiteSpace(commandName))
             {
@@ -74,8 +82,9 @@ using System.Linq;
 
             var target = _commandRegistry.Values.FirstOrDefault(method =>
             {
-                var attr = method.GetCustomAttribute<CommandAttribute>();
+                var attr = method.GetCustomAttribute<SolidWorksAddinStudy.CommandAttribute>();
                 return attr != null &&
+                       (!source.HasValue || attr.Source == source.Value) &&
                        (string.Equals(attr.LocalizedName, commandName, StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(attr.Name, commandName, StringComparison.OrdinalIgnoreCase));
             });
@@ -91,8 +100,9 @@ using System.Linq;
 
         private void ExecuteRegisteredMethod(MethodInfo method)
         {
-            var cmdAttr = method.GetCustomAttribute<CommandAttribute>();
-            string commandName = cmdAttr?.LocalizedName ?? method.Name;
+            var cmdAttr = method.GetCustomAttribute<SolidWorksAddinStudy.CommandAttribute>();
+            bool success = false;
+            string message = "ok";
             try
             {
                 if (cmdAttr != null && cmdAttr.ShowOutputWindow)
@@ -101,20 +111,154 @@ using System.Linq;
                 }
 
                 method.Invoke(this, null);
+                success = true;
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException != null)
+            {
+                message = tie.InnerException.Message;
+                throw tie.InnerException;
             }
             catch
             {
+                message = "执行失败";
                 throw;
             }
+            finally
+            {
+                WriteCommandActionLog(cmdAttr, method.Name, success, message);
+            }
+        }
+
+        private void WriteCommandActionLog(SolidWorksAddinStudy.CommandAttribute? cmdAttr, string methodName, bool success, string message)
+        {
+            try
+            {
+                var log = new CommandActionLogEntry
+                {
+                    Timestamp = DateTime.Now,
+                    Source = "sw_command_attribute",
+                    ActionName = cmdAttr?.Name ?? methodName,
+                    LocalizedName = cmdAttr?.LocalizedName ?? methodName,
+                    CommandId = cmdAttr?.Id ?? 0,
+                    EntryPoint = cmdAttr?.Source.ToString() ?? CommandSource.CommandBar.ToString(),
+                    Success = success,
+                    Message = message ?? string.Empty,
+                    ActiveDocument = GetCurrentDocSnapshotForActionLog()
+                };
+
+                string logDir = GetCommandLogDirectoryForActionLog();
+                Directory.CreateDirectory(logDir);
+                string logFile = Path.Combine(logDir, "command-executions.jsonl");
+                string line = JsonConvert.SerializeObject(log);
+
+                lock (_commandActionLogLock)
+                {
+                    File.AppendAllText(logFile, line + System.Environment.NewLine, Encoding.UTF8);
+                }
+            }
+            catch
+            {
+                // 日志失败不影响命令执行
+            }
+        }
+
+        private CommandActionActiveDocumentSnapshot? GetCurrentDocSnapshotForActionLog()
+        {
+            try
+            {
+                if (swApp == null)
+                {
+                    return null;
+                }
+
+                var doc = swApp.ActiveDoc as ModelDoc2;
+                if (doc == null)
+                {
+                    return null;
+                }
+
+                string typeText = doc.GetType() switch
+                {
+                    (int)swDocumentTypes_e.swDocPART => "PART",
+                    (int)swDocumentTypes_e.swDocASSEMBLY => "ASSEMBLY",
+                    (int)swDocumentTypes_e.swDocDRAWING => "DRAWING",
+                    _ => "UNKNOWN"
+                };
+
+                return new CommandActionActiveDocumentSnapshot
+                {
+                    Title = doc.GetTitle() ?? string.Empty,
+                    Path = doc.GetPathName() ?? string.Empty,
+                    Type = typeText
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string GetCommandLogDirectoryForActionLog()
+        {
+            string localAppData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData);
+            return Path.Combine(localAppData, "my_c", "command_logs");
+        }
+
+        private sealed class CommandActionLogEntry
+        {
+            [JsonProperty("timestamp")]
+            public DateTime Timestamp { get; set; }
+
+            [JsonProperty("source")]
+            public string Source { get; set; } = "";
+
+            [JsonProperty("actionName")]
+            public string ActionName { get; set; } = "";
+
+            [JsonProperty("localizedName")]
+            public string LocalizedName { get; set; } = "";
+
+            [JsonProperty("commandId")]
+            public int CommandId { get; set; }
+
+            [JsonProperty("entryPoint")]
+            public string EntryPoint { get; set; } = "";
+
+            [JsonProperty("success")]
+            public bool Success { get; set; }
+
+            [JsonProperty("message")]
+            public string Message { get; set; } = "";
+
+            [JsonProperty("activeDocument")]
+            public CommandActionActiveDocumentSnapshot? ActiveDocument { get; set; }
+        }
+
+        private sealed class CommandActionActiveDocumentSnapshot
+        {
+            [JsonProperty("title")]
+            public string Title { get; set; } = "";
+
+            [JsonProperty("path")]
+            public string Path { get; set; } = "";
+
+            [JsonProperty("type")]
+            public string Type { get; set; } = "";
         }
    private void AddCommandMgr()
         {
             try
             {
                 InitializeCommandRegistry();
-                
+
+                var toolbarCommands = _commandRegistry.Values
+                    .Where(m => m.GetCustomAttribute<SolidWorksAddinStudy.CommandAttribute>()?.Source == CommandSource.CommandBar)
+                    .Select(m => m.GetCustomAttribute<SolidWorksAddinStudy.CommandAttribute>())
+                    .Where(attr => attr != null)
+                    .ToArray();
+
                 int mainCmdGroupID = 5001;
-                int[] mainItemIds = new List<int>(_commandRegistry.Keys).ToArray();
+                int[] mainItemIds = toolbarCommands.Select(a => a.Id).ToArray();
 
                 int cmdGroupErr = 0;
                 bool ignorePrevious = false;
@@ -154,23 +298,19 @@ using System.Linq;
 
                 int menuToolbarOption = (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem);
 
-                foreach (var kvp in _commandRegistry)
+                foreach (var cmdAttr in toolbarCommands)
                 {
-                    var cmdAttr = kvp.Value.GetCustomAttribute<CommandAttribute>();
-                    if (cmdAttr != null)
-                    {
-                        int cmdIndex = cmdGroup.AddCommandItem2(
-                            cmdAttr.Name,
-                            -1,
-                            cmdAttr.Tooltip,
-                            cmdAttr.LocalizedName,
-                            0,
-                            $"FunctionProxy({cmdAttr.Id})",
-                            $"EnableFunction({cmdAttr.Id})",
-                            kvp.Key,
-                            menuToolbarOption
-                        );
-                    }
+                    int cmdIndex = cmdGroup.AddCommandItem2(
+                        cmdAttr.Name,
+                        -1,
+                        cmdAttr.Tooltip,
+                        cmdAttr.LocalizedName,
+                        0,
+                        $"FunctionProxy({cmdAttr.Id})",
+                        $"EnableFunction({cmdAttr.Id})",
+                        cmdAttr.Id,
+                        menuToolbarOption
+                    );
                 }
 
                 cmdGroup.HasToolbar = true;
@@ -187,8 +327,7 @@ using System.Linq;
                 foreach (var docType in allDocTypes)
                 {
                     // 获取该文档类型应该显示的命令
-                    var commandsForDocType = _commandRegistry.Values
-                        .Select(m => m.GetCustomAttribute<CommandAttribute>())
+                    var commandsForDocType = toolbarCommands
                         .Where(attr => attr != null && 
                               (attr.DocumentTypes.Contains(0) || attr.DocumentTypes.Contains(docType)))
                         .ToArray();

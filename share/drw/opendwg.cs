@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -31,13 +31,14 @@ namespace tools
             var swViews = (object[])swSheet.GetViews();
             var partDoc = ((SolidWorks.Interop.sldworks.View)swViews[1]).ReferencedDocument;
 
+            string outputRoot = ResolveOutputRoot(directory);
             string outputfile;
             bool is_cnc = false;
             
             if (partDoc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
             {
                 Debug.WriteLine($"{partDoc.GetPathName()},type:assembly");
-                outputfile = directory + "\\" + "出图" + "\\" + "焊接图";
+                outputfile = Path.Combine(outputRoot, "焊接图");
             }
             else
             {
@@ -46,16 +47,16 @@ namespace tools
 
                 if (thickness == 0)
                 {
-                    outputfile = directory + "\\" + "出图" + "\\" + "CNC";
+                    outputfile = Path.Combine(outputRoot, "CNC");
                     is_cnc = true;
                 }
                 else
                 {
-                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" + thickness.ToString();
+                    outputfile = Path.Combine(outputRoot, "工程图", thickness.ToString());
                 }
             }
 
-            string dwgFileName = outputfile + "\\" + Path.GetFileNameWithoutExtension(fullpath) + ".dwg";
+            string dwgFileName = Path.Combine(outputfile, Path.GetFileNameWithoutExtension(fullpath) + ".dwg");
             if (File.Exists(dwgFileName))
             {
                 if (opencaxa)
@@ -75,6 +76,13 @@ namespace tools
 
             }
 
+        }
+
+        private static string ResolveOutputRoot(string modelDirectory)
+        {
+            string folderName = Path.GetFileName(modelDirectory);
+            string preferredRootName = string.IsNullOrWhiteSpace(folderName) ? "钣金" : $"{folderName}钣金";
+            return Path.Combine(modelDirectory, preferredRootName);
         }
     }
 }

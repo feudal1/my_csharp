@@ -6,7 +6,6 @@ using System.Diagnostics;
 using SolidWorks.Interop.swconst;
 using System.Collections.Generic;
 using System.IO;
-using System.Collections.Generic;
 using tools;
 namespace SolidWorksAddinStudy
 {
@@ -20,32 +19,69 @@ namespace SolidWorksAddinStudy
       
       public string new_drawing_from_part()
       {
-          ShowOutputWindow();
+          return ExecuteContextMenuCommand("new_drawing_from_part");
+      }
+
+      public string newdrw2_menu()
+      {
+          return ExecuteContextMenuCommand("newdrw2_menu");
+      }
+
+      [SolidWorksAddinStudy.Command(2005, "新建工程图(新流程)", "为当前零件/装配体创建工程图并添加视图", "newdrw2_menu", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, Source = CommandSource.ContextMenu)]
+      private void NewDrw2FromContextMenu()
+      {
+          CreateDrawingFromSelectedPartWithNewFlow();
+      }
+
+      private void CreateDrawingFromSelectedPartWithNewFlow()
+      {
           try
           {
-              Debug.WriteLine("开始创建工程图");
               if (swApp == null)
               {
                   Debug.WriteLine("SolidWorks 未初始化");
-                  return "SolidWorks 未初始化";
+                  return;
               }
 
-              var acswModel = (ModelDoc2)swApp.ActiveDoc;
-                  var (swModel, body) = get_select_body(acswModel);
-              if (swModel == null)
+              var activeModel = (ModelDoc2)swApp.ActiveDoc;
+              if (activeModel == null)
               {
-                  Debug.WriteLine("没有打开的文档");
-                  swApp.SendMsgToUser("请先打开一个零件文档");
-                  return "没有打开的文档";
+                  swApp.SendMsgToUser("请先打开一个文档");
+                  return;
               }
 
-              // 添加名称到自定义信息
-              add_name2info.run(swModel);
-              
-              // 创建新工程图
-              New_drw.run(swApp, swModel);
-              
-              Debug.WriteLine("工程图已创建");
+              // 右键命令统一按“当前选中对象关联的零件”执行。
+              var selectedParts = CollectSelectedPartDocuments(activeModel);
+              if (selectedParts.Count == 0)
+              {
+                  swApp.SendMsgToUser("请先在零件或装配体中选中一个对象（面/实体/组件）");
+                  return;
+              }
+
+              var targetPart = selectedParts[0];
+              string targetPath = targetPart.GetPathName();
+              if (string.IsNullOrWhiteSpace(targetPath))
+              {
+                  swApp.SendMsgToUser("选中的零件尚未保存，请先保存零件");
+                  return;
+              }
+
+              New_drw2.run(swApp, targetPart);
+          }
+          catch (Exception ex)
+          {
+              Debug.WriteLine($"右键新建工程图(newdrw2)失败：{ex.Message}");
+              swApp?.SendMsgToUser($"右键新建工程图失败：{ex.Message}");
+          }
+      }
+
+      [SolidWorksAddinStudy.Command(2001, "实体新建工程图", "从当前选中实体创建工程图", "new_drawing_from_part", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true, Source = CommandSource.ContextMenu)]
+      private string NewDrawingFromPartCore()
+      {
+          try
+          {
+              Debug.WriteLine("开始创建工程图（右键统一流程）");
+              CreateDrawingFromSelectedPartWithNewFlow();
               return "工程图已创建";
           }
           catch (Exception ex)
@@ -58,7 +94,12 @@ namespace SolidWorksAddinStudy
 
       public string export_selected_to_step()
       {
-          ShowOutputWindow();
+          return ExecuteContextMenuCommand("export_selected_to_step");
+      }
+
+      [SolidWorksAddinStudy.Command(2002, "实体导出STEP", "导出当前选中实体为STEP", "export_selected_to_step", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true, Source = CommandSource.ContextMenu)]
+      private string ExportSelectedToStepCore()
+      {
           try
           {
               Debug.WriteLine("开始导出STEP");
@@ -121,7 +162,12 @@ namespace SolidWorksAddinStudy
 
       public string check_k_factor()
       {
-          ShowOutputWindow();
+          return ExecuteContextMenuCommand("check_k_factor");
+      }
+
+      [SolidWorksAddinStudy.Command(2003, "实体检查K因子", "检查当前选中实体的K因子", "check_k_factor", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true, Source = CommandSource.ContextMenu)]
+      private string CheckKFactorCore()
+      {
           try
           {
               Debug.WriteLine("开始检查K因子");
@@ -171,6 +217,12 @@ namespace SolidWorksAddinStudy
 
       public string modify_equations()
       {
+          return ExecuteContextMenuCommand("modify_equations");
+      }
+
+      [SolidWorksAddinStudy.Command(2004, "实体修改方程式", "修改当前选中对象相关零件的方程式", "modify_equations", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true, Source = CommandSource.ContextMenu)]
+      private string ModifyEquationsCore()
+      {
           try
           {
               Debug.WriteLine("开始修改方程式");
@@ -191,8 +243,8 @@ namespace SolidWorksAddinStudy
               var parts = CollectSelectedPartDocuments(acswModel);
               if (parts.Count == 0)
               {
-                  Debug.WriteLine("未选中实体或无法解析为零件");
-                  swApp.SendMsgToUser("请在零件或装配体中选中一个或多个面/实体（装配体中需能解析到零件文档）");
+                  Debug.WriteLine("未选中有效对象或无法解析为零件");
+                  swApp.SendMsgToUser("请在零件或装配体中选中一个或多个对象（面/实体/组件等，装配体中需能解析到零件文档）");
                   return "未选中实体";
               }
 
@@ -207,8 +259,31 @@ namespace SolidWorksAddinStudy
           }
       }
 
+      private string ExecuteContextMenuCommand(string commandName)
+      {
+          try
+          {
+              bool ok = ExecuteCommandByName(commandName, CommandSource.ContextMenu);
+              if (!ok)
+              {
+                  string msg = $"未找到右键命令: {commandName}";
+                  Debug.WriteLine(msg);
+                  swApp?.SendMsgToUser(msg);
+                  return msg;
+              }
+              return "ok";
+          }
+          catch (Exception ex)
+          {
+              string msg = $"右键命令执行失败: {commandName}, {ex.Message}";
+              Debug.WriteLine(msg);
+              swApp?.SendMsgToUser(msg);
+              return msg;
+          }
+      }
+
       /// <summary>
-      /// 从当前多选几何中收集不重复的零件文档（装配体支持多零件；零件文档仅自身）。
+          /// 从当前多选对象中收集不重复的零件文档（支持面、实体、组件等）。
       /// </summary>
       private static List<ModelDoc2> CollectSelectedPartDocuments(ModelDoc2 activeDoc)
       {
@@ -293,24 +368,18 @@ namespace SolidWorksAddinStudy
 
           if (activeDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
           {
-              bool anyGeometry = false;
+              bool anySelection = false;
               for (int i = 1; i <= n; i++)
               {
                   object selObj = swSelMgr.GetSelectedObject6(i, -1);
-                  if (selObj is Face2 face && face.GetBody() != null)
+                  if (selObj != null)
                   {
-                      anyGeometry = true;
-                      break;
-                  }
-
-                  if (selObj is IBody2)
-                  {
-                      anyGeometry = true;
+                      anySelection = true;
                       break;
                   }
               }
 
-              if (anyGeometry)
+              if (anySelection)
               {
                   TryAdd(activeDoc);
               }
@@ -323,6 +392,20 @@ namespace SolidWorksAddinStudy
               for (int i = 1; i <= n; i++)
               {
                   object selObj = swSelMgr.GetSelectedObject6(i, -1);
+                  var comp = (Component2)swSelMgr.GetSelectedObjectsComponent3(i, -1);
+                  if (comp == null && selObj is Component2 directComp)
+                  {
+                      comp = directComp;
+                  }
+
+                  // 优先按组件解析（支持装配体树/组件选择，不限于面）
+                  if (comp != null)
+                  {
+                      var partModelFromComp = EnsurePartDocVisible(comp);
+                      TryAdd(partModelFromComp);
+                      continue;
+                  }
+
                   IBody2 body = null;
                   if (selObj is Face2 face)
                   {
@@ -338,7 +421,7 @@ namespace SolidWorksAddinStudy
                       continue;
                   }
 
-                  var comp = (Component2)swSelMgr.GetSelectedObjectsComponent3(i, -1);
+                  comp = (Component2)swSelMgr.GetSelectedObjectsComponent3(i, -1);
                   var partModel = comp == null ? null : EnsurePartDocVisible(comp);
                   TryAdd(partModel);
               }
@@ -441,15 +524,19 @@ namespace SolidWorksAddinStudy
                             swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "new_drw", "new_drawing_from_part", "", "", "");
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "new_drw", "new_drawing_from_part", "", "", "");
 
+                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "new_drw2", "newdrw2_menu", "", "", "");
+                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "new_drw2", "newdrw2_menu", "", "", "");
+
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "export_step", "export_selected_to_step", "", "", "");
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "export_step", "export_selected_to_step", "", "", "");
 
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "check_k_factor", "check_k_factor", "", "", "");
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "check_k_factor", "check_k_factor", "", "", "");
 
-                // 添加修改方程式的右键菜单项
+                // 添加修改方程式的右键菜单项（面/组件都可触发）
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocPART, addinCookieID, (int)swSelectType_e.swSelFACES, "modify_equations", "modify_equations", "", "", "");
                 swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelFACES, "modify_equations", "modify_equations", "", "", "");
+                swApp.AddMenuPopupItem2((int)swDocumentTypes_e.swDocASSEMBLY, addinCookieID, (int)swSelectType_e.swSelCOMPONENTS, "modify_equations_component", "modify_equations", "", "", "");
 
                       
             }

@@ -23,7 +23,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\share\share.csproj" />
-    <ProjectReference Include="..\ctools\ctool.csproj" />
   </ItemGroup>
 
   <ItemGroup>

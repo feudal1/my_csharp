@@ -3,7 +3,7 @@ using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 public class one2step
 {
-    static public int run( ModelDoc2 swModel)
+    static public int run(ModelDoc2 swModel, string? rootFolderName = null)
     {
         string fullPath = swModel.GetPathName();
         string partname = Path.GetFileNameWithoutExtension(fullPath);
@@ -16,19 +16,23 @@ public class one2step
                 
         // 获取当前文件所在目录
         string? currentDirectory = Path.GetDirectoryName(fullPath);
-        
+        if (string.IsNullOrWhiteSpace(currentDirectory))
+        {
+            Console.WriteLine("错误：无法获取文件所在目录。");
+            return 0;
+        }
+
         // 构建完整的输出路径
         string outputPath;
-        
-        // 如果零件名称包含"方管"，导出到特殊文件夹
-        if (partname.Contains("方管"))
+        bool isSquareTube = partname.Contains("方管");
+        string effectiveRootName = rootFolderName;
+        if (string.IsNullOrWhiteSpace(effectiveRootName))
         {
-            outputPath = Path.Combine(currentDirectory, "方管_step", $"{partname}.STEP");
+            effectiveRootName = Path.GetFileName(currentDirectory);
         }
-        else
-        {
-            outputPath = Path.Combine(currentDirectory, "step", $"{partname}.STEP");
-        }
+        string safeRootName = SanitizeFolderName(effectiveRootName ?? string.Empty);
+        string targetFolderName = isSquareTube ? $"{safeRootName}方管" : $"{safeRootName}钣金";
+        outputPath = Path.Combine(currentDirectory, targetFolderName, $"{partname}.STEP");
         
         string outputDirectory = Path.GetDirectoryName(outputPath);
         if (!Directory.Exists(outputDirectory))
@@ -41,5 +45,21 @@ public class one2step
         return 1 ;
     }
 
+    static private string SanitizeFolderName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "导出";
+        }
+
+        string result = name.Trim();
+        foreach (char c in Path.GetInvalidFileNameChars())
+        {
+            result = result.Replace(c, '_');
+        }
+
+        return string.IsNullOrWhiteSpace(result) ? "导出" : result;
+    }
+  
   
 }

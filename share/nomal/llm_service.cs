@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 using System.Net.Http;
 using System.Net;
@@ -25,14 +26,19 @@ namespace tools
         private const string ApiUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
         private const string ApiHost = "dashscope.aliyuncs.com";
         private const int ApiPort = 443;
+        private const string BridgePipeName = "my_c_llm_bridge_v1";
         
-        private readonly HttpClient _httpClient;
+        private HttpClient _httpClient;
         private readonly string _shotMemoryFile;
         private readonly string _logFilePath;
         private readonly string _worksKnowledgeFile;
         private readonly string _runLogFilePath;
         private readonly Func<string>? _getCommandsDescriptionFunc;
         private bool _networkDiagLogged;
+        private bool _usingProxy;
+        private string _proxyDescription = "none";
+        private Process? _bridgeProcess;
+        private bool _bridgeLaunchAttempted;
 
         public LlmService(Func<string>? getCommandsDescriptionFunc = null)
         {
@@ -61,12 +67,18 @@ namespace tools
 
         private HttpClient CreateHttpClient()
         {
+            var (proxy, proxyDescription) = BuildProxy();
+            _usingProxy = proxy != null;
+            _proxyDescription = proxyDescription;
+
             var handler = new HttpClientHandler
             {
-                UseProxy = true,
-                Proxy = BuildProxy(),
+                UseProxy = _usingProxy,
+                Proxy = proxy,
                 AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
             };
+
+            Console.WriteLine($"[调试] HttpClient 代理模式：{(_usingProxy ? "启用" : "禁用")} ({_proxyDescription})");
 
             return new HttpClient(handler)
             {
@@ -74,24 +86,26 @@ namespace tools
             };
         }
 
-        private IWebProxy? BuildProxy()
+        private (IWebProxy? Proxy, string Description) BuildProxy()
         {
             // 优先读取常见代理环境变量，兼容公司网络或本机代理软件
-            string? proxyText = Environment.GetEnvironmentVariable("HTTPS_PROXY")
+            string? proxyText = Environment.GetEnvironmentVariable("DASHSCOPE_PROXY")
+                                ?? Environment.GetEnvironmentVariable("HTTPS_PROXY")
                                 ?? Environment.GetEnvironmentVariable("https_proxy")
                                 ?? Environment.GetEnvironmentVariable("HTTP_PROXY")
                                 ?? Environment.GetEnvironmentVariable("http_proxy");
             if (!string.IsNullOrWhiteSpace(proxyText) && Uri.TryCreate(proxyText, UriKind.Absolute, out var proxyUri))
             {
                 Console.WriteLine($"[调试] 使用环境变量代理：{proxyUri}");
-                return new WebProxy(proxyUri)
+                return (new WebProxy(proxyUri)
                 {
-                    BypassProxyOnLocal = true
-                };
+                    BypassProxyOnLocal = true,
+                    Credentials = CredentialCache.DefaultCredentials
+                }, $"env:{proxyUri}");
             }
 
             // 回退到系统默认代理（WinINet）
-            var systemProxy = WebRequest.DefaultWebProxy;
+            var systemProxy = WebRequest.GetSystemWebProxy();
             if (systemProxy != null)
             {
                 try
@@ -99,13 +113,24 @@ namespace tools
                     var testUri = new Uri($"https://{ApiHost}");
                     var detectedProxyUri = systemProxy.GetProxy(testUri);
                     Console.WriteLine($"[调试] 系统代理检测结果：{detectedProxyUri}");
+                    // 当返回的 URI 与目标地址一致时，表示该地址实际走直连
+                    if (detectedProxyUri != null &&
+                        !string.Equals(
+                            detectedProxyUri.Authority,
+                            testUri.Authority,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return (systemProxy, $"system:{detectedProxyUri}");
+                    }
+
+                    Console.WriteLine("[调试] 系统代理未命中目标地址，改为直连");
                 }
                 catch
                 {
                     // 仅用于调试，不影响主流程
                 }
             }
-            return systemProxy;
+            return (null, "none");
         }
 
         private async Task LogNetworkDiagnosticsOnceAsync()
@@ -120,7 +145,11 @@ namespace tools
             {
                 var addresses = await Dns.GetHostAddressesAsync(ApiHost);
                 Console.WriteLine($"[调试] DNS 解析 {ApiHost}：{string.Join(", ", addresses.Select(a => a.ToString()))}");
-                foreach (var address in addresses.Take(2))
+                var orderedAddresses = addresses
+                    .OrderBy(a => a.AddressFamily == AddressFamily.InterNetwork ? 0 : 1)
+                    .ToList();
+
+                foreach (var address in orderedAddresses)
                 {
                     using var tcp = new TcpClient(address.AddressFamily);
                     var connectTask = tcp.ConnectAsync(address, ApiPort);
@@ -133,6 +162,21 @@ namespace tools
                     }
                     Console.WriteLine($"[调试] TCP 连通超时：{address}:{ApiPort}");
                 }
+
+            // 辅助打印系统代理信息，便于排查公司网络
+            try
+            {
+                var systemProxy = WebRequest.GetSystemWebProxy();
+                if (systemProxy != null)
+                {
+                    var proxyUri = systemProxy.GetProxy(new Uri($"https://{ApiHost}"));
+                    Console.WriteLine($"[调试] 诊断-系统代理路由：{proxyUri}");
+                }
+            }
+            catch
+            {
+                // 诊断信息失败时忽略
+            }
             }
             catch (Exception ex)
             {
@@ -806,14 +850,36 @@ namespace tools
             var fullResponse = new StringBuilder();
             bool hasOutputStarted = false;
 
+            string jsonBody = JsonConvert.SerializeObject(requestBodyObj);
+
+            // SolidWorks 进程禁网时优先通过本地桥接进程转发
+            if (ShouldPreferBridge())
+            {
+                var bridgeResult = await TryCallLocalBridgeAsync(jsonBody, apiKey);
+                if (bridgeResult.Success)
+                {
+                    if (!string.IsNullOrWhiteSpace(bridgeResult.Content))
+                    {
+                        Console.WriteLine("\n[调试] 已通过本地桥接返回结果。");
+                        Console.Write(bridgeResult.Content);
+                        Console.Out.Flush();
+                    }
+                    return bridgeResult.Content ?? "";
+                }
+                if (!string.IsNullOrWhiteSpace(bridgeResult.Error))
+                {
+                    Console.WriteLine($"[调试] 本地桥接不可用，改走当前进程网络：{bridgeResult.Error}");
+                }
+            }
+
             try
             {
-                string jsonBody = JsonConvert.SerializeObject(requestBodyObj);
                 using var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
                 
                 Console.WriteLine($"\n[调试] 请求体 JSON 长度：{jsonBody.Length} 字符");
                 Console.WriteLine($"[调试] HttpClient 状态：{(_httpClient != null ? "已初始化" : "未初始化")}");
                 Console.WriteLine($"[调试] HttpClient Timeout: {_httpClient?.Timeout.TotalSeconds} 秒");
+                Console.WriteLine($"[调试] 当前代理配置：{(_usingProxy ? "启用" : "禁用")} ({_proxyDescription})");
                 await LogNetworkDiagnosticsOnceAsync();
                 
                 // 设置 Header
@@ -861,7 +927,92 @@ namespace tools
                         Console.WriteLine($"[调试] 内部异常：{httpEx.InnerException.Message}");
                         Console.WriteLine($"[调试] 内部异常类型：{httpEx.InnerException.GetType().FullName}");
                     }
-                    throw;
+
+                    try
+                    {
+                        // 代理连通性问题下自动降级为直连后重试一次
+                        if (_usingProxy)
+                        {
+                            Console.WriteLine("[调试] 检测到请求失败，尝试禁用代理后重试一次...");
+                            _httpClient.Dispose();
+                            _usingProxy = false;
+                            _proxyDescription = "fallback:none";
+                            var retryHandler = new HttpClientHandler
+                            {
+                                UseProxy = false,
+                                Proxy = null,
+                                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+                            };
+                            _httpClient = new HttpClient(retryHandler)
+                            {
+                                Timeout = TimeSpan.FromMinutes(5)
+                            };
+
+                            _httpClient.DefaultRequestHeaders.Clear();
+                            _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+
+                            using var retryContent = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+                            using var retryRequest = new HttpRequestMessage
+                            {
+                                Method = HttpMethod.Post,
+                                RequestUri = new Uri(ApiUrl),
+                                Content = retryContent
+                            };
+
+                            response = await _httpClient.SendAsync(
+                                retryRequest,
+                                HttpCompletionOption.ResponseHeadersRead
+                            );
+                            Console.WriteLine($"[调试] 直连重试成功，response 为 {(response == null ? "null" : "非 null")}");
+                        }
+                        else
+                        {
+                            // 直连失败时，再尝试系统代理（覆盖公司网络 / PAC 场景）
+                            Console.WriteLine("[调试] 直连失败，尝试切换系统代理后重试一次...");
+                            var systemProxy = WebRequest.GetSystemWebProxy();
+                            if (systemProxy == null)
+                            {
+                                throw;
+                            }
+
+                            _httpClient.Dispose();
+                            _usingProxy = true;
+                            _proxyDescription = "fallback:system";
+                            var retryHandler = new HttpClientHandler
+                            {
+                                UseProxy = true,
+                                Proxy = systemProxy,
+                                DefaultProxyCredentials = CredentialCache.DefaultCredentials,
+                                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+                            };
+                            _httpClient = new HttpClient(retryHandler)
+                            {
+                                Timeout = TimeSpan.FromMinutes(5)
+                            };
+
+                            _httpClient.DefaultRequestHeaders.Clear();
+                            _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+
+                            using var retryContent = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+                            using var retryRequest = new HttpRequestMessage
+                            {
+                                Method = HttpMethod.Post,
+                                RequestUri = new Uri(ApiUrl),
+                                Content = retryContent
+                            };
+
+                            response = await _httpClient.SendAsync(
+                                retryRequest,
+                                HttpCompletionOption.ResponseHeadersRead
+                            );
+                            Console.WriteLine($"[调试] 系统代理重试成功，response 为 {(response == null ? "null" : "非 null")}");
+                        }
+                    }
+                    catch (Exception retryEx)
+                    {
+                        Console.WriteLine($"[调试] HttpClient 重试链路失败：{retryEx.GetType().Name} - {retryEx.Message}");
+                        return await CallHttpWebRequestFallbackAsync(jsonBody, apiKey);
+                    }
                 }
                 catch (TaskCanceledException cancelEx)
                 {
@@ -997,6 +1148,340 @@ EndStream:
                 Console.ResetColor();
                 throw;
             }
+        }
+
+        private async Task<BridgeResponse> TryCallLocalBridgeAsync(string jsonBody, string apiKey)
+        {
+            try
+            {
+                await EnsureBridgeProcessAsync();
+
+                using var client = new NamedPipeClientStream(
+                    ".",
+                    BridgePipeName,
+                    PipeDirection.InOut,
+                    PipeOptions.Asynchronous);
+
+                await Task.Run(() => client.Connect(10000));
+
+                using var writer = new StreamWriter(client, new UTF8Encoding(false), 4096, leaveOpen: true)
+                {
+                    AutoFlush = true
+                };
+                using var reader = new StreamReader(client, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+
+                var req = new BridgeRequest
+                {
+                    ApiUrl = ApiUrl,
+                    ApiKey = apiKey,
+                    JsonBody = jsonBody
+                };
+
+                string reqJson = JsonConvert.SerializeObject(req);
+                await writer.WriteLineAsync(reqJson);
+
+                var readTask = reader.ReadLineAsync();
+                var completed = await Task.WhenAny(readTask, Task.Delay(15000));
+                if (completed != readTask)
+                {
+                    return new BridgeResponse
+                    {
+                        Success = false,
+                        Error = "桥接响应超时（15秒）"
+                    };
+                }
+
+                var respJson = await readTask;
+                if (string.IsNullOrWhiteSpace(respJson))
+                {
+                    return new BridgeResponse
+                    {
+                        Success = false,
+                        Error = "桥接返回空响应"
+                    };
+                }
+
+                var resp = JsonConvert.DeserializeObject<BridgeResponse>(respJson);
+                if (resp == null)
+                {
+                    return new BridgeResponse
+                    {
+                        Success = false,
+                        Error = "桥接响应反序列化失败"
+                    };
+                }
+                return resp;
+            }
+            catch (TimeoutException)
+            {
+                return new BridgeResponse
+                {
+                    Success = false,
+                    Error = $"无法连接本地桥接（Pipe: {BridgePipeName}）。请确认 ai.exe 或 llm_bridge.exe 已启动且未被安全策略拦截。"
+                };
+            }
+            catch (Exception ex)
+            {
+                return new BridgeResponse
+                {
+                    Success = false,
+                    Error = $"桥接调用异常：{ex.GetType().Name} - {ex.Message}"
+                };
+            }
+        }
+
+        private async Task EnsureBridgeProcessAsync()
+        {
+            if (!ShouldPreferBridge())
+            {
+                return;
+            }
+
+            if (_bridgeProcess != null && !_bridgeProcess.HasExited)
+            {
+                return;
+            }
+
+            if (_bridgeLaunchAttempted)
+            {
+                return;
+            }
+
+            _bridgeLaunchAttempted = true;
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var candidates = BuildBridgeExecutableCandidates(baseDir).ToList();
+
+                string? bridgePath = candidates.FirstOrDefault(File.Exists);
+                if (string.IsNullOrWhiteSpace(bridgePath))
+                {
+                    Console.WriteLine("[调试] 未找到桥接可执行文件（llm_bridge.exe/ai.exe），将继续使用当前进程网络。");
+                    Console.WriteLine($"[调试] 桥接搜索基目录：{baseDir}");
+                    return;
+                }
+
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = bridgePath,
+                    WorkingDirectory = Path.GetDirectoryName(bridgePath) ?? baseDir,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                _bridgeProcess = Process.Start(startInfo);
+                Console.WriteLine($"[调试] 已尝试启动本地桥接：{bridgePath}");
+                await Task.Delay(1200);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[调试] 自动启动桥接失败：{ex.GetType().Name} - {ex.Message}");
+            }
+        }
+
+        private static IEnumerable<string> BuildBridgeExecutableCandidates(string baseDir)
+        {
+            var candidateNames = new[] { "llm_bridge.exe", "ai.exe" };
+            var searchDirs = new List<string>();
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void AddDir(string? dir)
+            {
+                if (string.IsNullOrWhiteSpace(dir))
+                {
+                    return;
+                }
+
+                try
+                {
+                    string full = Path.GetFullPath(dir);
+                    if (visited.Add(full))
+                    {
+                        searchDirs.Add(full);
+                    }
+                }
+                catch
+                {
+                    // 忽略无效路径
+                }
+            }
+
+            var dirInfo = new DirectoryInfo(baseDir);
+            for (int i = 0; i < 8 && dirInfo != null; i++)
+            {
+                AddDir(Path.Combine(dirInfo.FullName, "ctools", "bin", "Debug", "net48"));
+                AddDir(Path.Combine(dirInfo.FullName, "ctools", "bin", "Release", "net48"));
+                AddDir(Path.Combine(dirInfo.FullName, "ctools", "bin", "Debug", "net9.0-windows"));
+                AddDir(Path.Combine(dirInfo.FullName, "ctools", "bin", "Release", "net9.0-windows"));
+                dirInfo = dirInfo.Parent;
+            }
+
+            // 再回退到宿主目录，避免优先命中被复制到插件目录中的旧版本 ai.exe
+            AddDir(baseDir);
+            AddDir(Environment.CurrentDirectory);
+
+            try
+            {
+                AddDir(Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName));
+            }
+            catch
+            {
+                // 某些宿主环境下 MainModule 可能受限
+            }
+
+            dirInfo = new DirectoryInfo(baseDir);
+            for (int i = 0; i < 8 && dirInfo != null; i++)
+            {
+                AddDir(dirInfo.FullName);
+                dirInfo = dirInfo.Parent;
+            }
+
+            foreach (var dir in searchDirs)
+            {
+                foreach (var fileName in candidateNames)
+                {
+                    yield return Path.Combine(dir, fileName);
+                }
+            }
+        }
+
+        private static bool ShouldPreferBridge()
+        {
+            var processName = Process.GetCurrentProcess().ProcessName ?? "";
+            if (processName.IndexOf("SLDWORKS", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            // 可通过环境变量手动启用桥接，便于调试
+            var env = Environment.GetEnvironmentVariable("LLM_USE_LOCAL_BRIDGE");
+            return string.Equals(env, "1", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(env, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// HttpClient 在宿主环境不可用时，使用 HttpWebRequest 兜底（非流式）
+        /// </summary>
+        private async Task<string> CallHttpWebRequestFallbackAsync(string jsonBody, string apiKey)
+        {
+            Console.WriteLine("[调试] 启用 HttpWebRequest 兜底请求（非流式）...");
+
+            string fallbackBody = jsonBody;
+            try
+            {
+                var bodyObj = JObject.Parse(jsonBody);
+                bodyObj["stream"] = false;
+                fallbackBody = bodyObj.ToString(Formatting.None);
+            }
+            catch
+            {
+                // 若请求体无法解析，继续使用原始请求体
+            }
+
+            var errors = new List<string>();
+
+            foreach (bool useProxy in new[] { true, false })
+            {
+                try
+                {
+                    string mode = useProxy ? "system-proxy" : "direct";
+                    Console.WriteLine($"[调试] HttpWebRequest 兜底尝试模式：{mode}");
+                    return await SendHttpWebRequestOnceAsync(fallbackBody, apiKey, useProxy);
+                }
+                catch (WebException webEx)
+                {
+                    string detail = await BuildWebExceptionDetailAsync(webEx);
+                    errors.Add($"{(useProxy ? "system-proxy" : "direct")} => {detail}");
+                    Console.WriteLine($"[调试] HttpWebRequest {(useProxy ? "代理" : "直连")}尝试失败：{detail}");
+                }
+                catch (Exception ex)
+                {
+                    string detail = $"{ex.GetType().Name}: {ex.Message}";
+                    errors.Add($"{(useProxy ? "system-proxy" : "direct")} => {detail}");
+                    Console.WriteLine($"[调试] HttpWebRequest {(useProxy ? "代理" : "直连")}尝试失败：{detail}");
+                }
+            }
+
+            throw new HttpRequestException($"HttpWebRequest 兜底失败：{string.Join(" | ", errors)}");
+        }
+
+        private async Task<string> SendHttpWebRequestOnceAsync(string requestBody, string apiKey, bool useSystemProxy)
+        {
+            var request = (HttpWebRequest)WebRequest.Create(ApiUrl);
+            request.Method = "POST";
+            request.ContentType = "application/json";
+            request.Accept = "application/json";
+            request.Timeout = 300000;
+            request.ReadWriteTimeout = 300000;
+            request.Proxy = useSystemProxy ? WebRequest.GetSystemWebProxy() : null;
+            if (request.Proxy != null)
+            {
+                request.Proxy.Credentials = CredentialCache.DefaultCredentials;
+            }
+            request.Headers[HttpRequestHeader.Authorization] = $"Bearer {apiKey}";
+
+            var payload = Encoding.UTF8.GetBytes(requestBody);
+            using (var reqStream = await request.GetRequestStreamAsync())
+            {
+                await reqStream.WriteAsync(payload, 0, payload.Length);
+            }
+
+            using var response = (HttpWebResponse)await request.GetResponseAsync();
+            using var respStream = response.GetResponseStream();
+            using var reader = new StreamReader(respStream ?? Stream.Null, Encoding.UTF8);
+            string responseText = await reader.ReadToEndAsync();
+
+            if (response.StatusCode != HttpStatusCode.OK)
+            {
+                throw new HttpRequestException($"API 请求失败 ({response.StatusCode}): {responseText}");
+            }
+
+            var root = JObject.Parse(responseText);
+            var errorToken = root["error"];
+            if (errorToken != null)
+            {
+                throw new HttpRequestException($"API 错误：{errorToken}");
+            }
+
+            string content = root["choices"]?[0]?["message"]?["content"]?.ToString() ?? "";
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                Console.WriteLine("[提示] 兜底请求成功，但未返回文本内容。");
+            }
+            return content;
+        }
+
+        private async Task<string> BuildWebExceptionDetailAsync(WebException webEx)
+        {
+            var parts = new List<string>
+            {
+                $"Status={webEx.Status}",
+                webEx.Message
+            };
+
+            if (webEx.InnerException != null)
+            {
+                parts.Add($"Inner={webEx.InnerException.GetType().Name}:{webEx.InnerException.Message}");
+            }
+
+            if (webEx.InnerException is SocketException socketEx)
+            {
+                parts.Add($"SocketError={socketEx.SocketErrorCode}({(int)socketEx.SocketErrorCode})");
+            }
+
+            if (webEx.Response is HttpWebResponse errResp)
+            {
+                using var errStream = errResp.GetResponseStream();
+                using var errReader = new StreamReader(errStream ?? Stream.Null, Encoding.UTF8);
+                string errBody = await errReader.ReadToEndAsync();
+                parts.Add($"HTTP={(int)errResp.StatusCode} {errResp.StatusCode}");
+                if (!string.IsNullOrWhiteSpace(errBody))
+                {
+                    parts.Add($"Body={errBody}");
+                }
+            }
+
+            return string.Join("; ", parts);
         }
 
         /// <summary>
@@ -1378,5 +1863,35 @@ EndStream:
         
         [JsonProperty("tool_calls", NullValueHandling = NullValueHandling.Ignore)]
         public List<ToolCall>? ToolCalls { get; set; }
+    }
+
+    /// <summary>
+    /// 本地桥接请求
+    /// </summary>
+    public class BridgeRequest
+    {
+        [JsonProperty("api_url")]
+        public string ApiUrl { get; set; } = "";
+
+        [JsonProperty("api_key")]
+        public string ApiKey { get; set; } = "";
+
+        [JsonProperty("json_body")]
+        public string JsonBody { get; set; } = "";
+    }
+
+    /// <summary>
+    /// 本地桥接响应
+    /// </summary>
+    public class BridgeResponse
+    {
+        [JsonProperty("success")]
+        public bool Success { get; set; }
+
+        [JsonProperty("content")]
+        public string? Content { get; set; }
+
+        [JsonProperty("error")]
+        public string? Error { get; set; }
     }
 }

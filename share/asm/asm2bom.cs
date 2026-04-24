@@ -62,9 +62,9 @@ namespace tools
         /// </summary>
         /// <param name="swApp">SolidWorks应用</param>
         /// <param name="swModel">模型文档</param>
-        /// <param name="partbom">是否为零件BOM</param>
+        /// <param name="pardoc">导出类型：钣金件/管件/装配体/零件</param>
         /// <param name="exportExcel">是否导出并打开Excel（默认true）</param>
-        static public async Task<int> run(SldWorks swApp, ModelDoc2 swModel, bool partbom, bool exportExcel = true)
+        static public async Task<int> run(SldWorks swApp, ModelDoc2 swModel, string pardoc, bool exportExcel = true)
         {
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             try
@@ -86,7 +86,13 @@ namespace tools
                     Console.WriteLine("错误：文档尚未保存，请先保存文件。");
                     return -1;
                 }
-                string? directory = Path.GetDirectoryName(fullPath) + "\\" + "出图";
+                string assemblyDirectory = Path.GetDirectoryName(fullPath) ?? string.Empty;
+                string assemblyFolderName = Path.GetFileName(assemblyDirectory);
+                string outputRootName = string.IsNullOrWhiteSpace(assemblyFolderName) ? "钣金" : $"{assemblyFolderName}钣金";
+
+                var drawingSearchRoots = new List<string>();
+                string currentDrawingRoot = Path.Combine(assemblyDirectory, outputRootName);
+                drawingSearchRoots.Add(currentDrawingRoot);
 
                 ModelDocExtension swModelDocExt = (ModelDocExtension)swModel.Extension;
                 BomTableAnnotation swBOMAnnotation;
@@ -98,14 +104,28 @@ namespace tools
                 tableTemplate = "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\lang\\chinese-simplified\\bom-standard.sldbomtbt";
                 
                 string Configuration = swApp.GetActiveConfigurationName(swModel.GetPathName());
-                // 根据 partbom 参数选择 BOM 类型
-                if (partbom)
+                string exportType = string.IsNullOrWhiteSpace(pardoc) ? "零件" : pardoc.Trim();
+                bool isAssemblyMode = string.Equals(exportType, "装配体", StringComparison.OrdinalIgnoreCase);
+                bool filterSheetMetal = string.Equals(exportType, "钣金件", StringComparison.OrdinalIgnoreCase);
+                bool filterTube = string.Equals(exportType, "管件", StringComparison.OrdinalIgnoreCase);
+                bool filterPart = string.Equals(exportType, "零件", StringComparison.OrdinalIgnoreCase);
+                bool isValidType = isAssemblyMode || filterSheetMetal || filterTube || filterPart;
+                List<string> suspectedUnconvertedSheetMetalParts = new List<string>();
+                if (!isValidType)
                 {
-                    bomType = (int)swBomType_e.swBomType_PartsOnly;  // 仅零件式 BOM
+                    Console.WriteLine($"错误：不支持的导出类型 '{exportType}'，仅支持：钣金件/管件/装配体/零件");
+                    return -1;
+                }
+
+                // 根据导出类型选择 BOM 类型
+                bool DetailedCutList=false;
+                if (isAssemblyMode)
+                {
+                    bomType = (int)swBomType_e.swBomType_Indented;  // 顶层装配体 BOM（包含子装配体）
                 }
                 else
                 {
-                    bomType = (int)swBomType_e.swBomType_TopLevelOnly;  // 顶层装配体 BOM（包含子装配体）
+                    bomType = (int)swBomType_e.swBomType_PartsOnly;  // 仅零件式 BOM
                 }
               
                 swBOMAnnotation = (BomTableAnnotation)swModelDocExt.InsertBomTable3(
@@ -116,7 +136,7 @@ namespace tools
                     Configuration, 
                     true, 
                     (int)swNumberingType_e.swNumberingType_Detailed, 
-                    false
+                    DetailedCutList
                 );
 
                 if (swBOMAnnotation == null)
@@ -187,9 +207,14 @@ namespace tools
                 // 优化1: 预先扫描DWG文件，构建快速查找字典
                 Console.WriteLine("正在预扫描DWG文件...");
                 Dictionary<string, bool> dwgFileCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-                if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+                foreach (string searchRoot in drawingSearchRoots)
                 {
-                    string[] allDwgFiles = Directory.GetFiles(directory, "*.dwg", SearchOption.AllDirectories);
+                    if (!Directory.Exists(searchRoot))
+                    {
+                        continue;
+                    }
+
+                    string[] allDwgFiles = Directory.GetFiles(searchRoot, "*.dwg", SearchOption.AllDirectories);
                     foreach (string dwgFile in allDwgFiles)
                     {
                         string fileNameWithoutExt = Path.GetFileNameWithoutExtension(dwgFile);
@@ -200,8 +225,9 @@ namespace tools
                         string cleanName = fileNameWithoutExt.Replace(" ", "").Replace("-", "").Replace("_", "");
                         dwgFileCache[cleanName] = true;
                     }
-                    Console.WriteLine($"预扫描完成，共找到 {allDwgFiles.Length} 个DWG文件，耗时: {stopwatch.ElapsedMilliseconds}ms");
+                    Console.WriteLine($"预扫描目录: {searchRoot}，新增 {allDwgFiles.Length} 个DWG文件，耗时: {stopwatch.ElapsedMilliseconds}ms");
                 }
+                Console.WriteLine($"预扫描结束，DWG索引共 {dwgFileCache.Count} 条，耗时: {stopwatch.ElapsedMilliseconds}ms");
                 
                 // 正向遍历BOM表行
                 int currentRowCount = count;
@@ -261,18 +287,32 @@ namespace tools
                             try
                             {
                                 // 优化：直接从字典中查找组件，而不是遍历所有组件
-                                if (componentMap.TryGetValue(partname, out Component2? foundComponent))
+                                if (!componentMap.TryGetValue(partname, out Component2? foundComponent))
                                 {
-                                    targetComponent = foundComponent;
-                               
-                                    if (targetComponent == null)
+                                    Console.WriteLine($"警告：未找到组件 '{partname}'");
+                                    if (isAssemblyMode)
                                     {
-                                        continue; // 没找到匹配的组件，跳过当前BOM行
+                                        bool deleted = swTableAnnotation.DeleteRow2(i, false);
+                                        Console.WriteLine($"删除非装配体行（未匹配到组件）: row={i}, part={partname}, result={deleted}");
+                                        currentRowCount--;
+                                        i--;
                                     }
-                                    
-                                    ModelDoc2 partDoc = (ModelDoc2)targetComponent.GetModelDoc2();
-                                
+                                    continue;
+                                }
 
+                                targetComponent = foundComponent;
+                                ModelDoc2 partDoc = (ModelDoc2)targetComponent.GetModelDoc2();
+                                int rowDocType = partDoc?.GetType() ?? -1;
+
+                                // 装配体模式时，只保留该行对应组件文档类型为装配体的行
+                                if (isAssemblyMode && rowDocType != (int)swDocumentTypes_e.swDocASSEMBLY)
+                                {
+                                    bool deleted = swTableAnnotation.DeleteRow2(i, false);
+                                    Console.WriteLine($"删除非装配体行: row={i}, part={partname}, docType={rowDocType}, result={deleted}");
+                                    currentRowCount--;
+                                    i--;
+                                    continue;
+                                }
 
                                 if (partDoc != null && partDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
                                 {
@@ -356,11 +396,22 @@ namespace tools
                                                         {
                                                             isSheetMetal = true;
                                                             
-                                                            string material="SPPC " + thickness.ToString("F2");
-                                                            string  materialdataname = "";
-                                                            string materialname=part.GetMaterialPropertyName2("Default",
-                                                                out materialdataname);
-                                                            if(materialname.Contains("不锈钢")&&materialname.Contains("sus"))material="SUS " + thickness.ToString("F2");
+                                                            string material = "SPPC " + thickness.ToString("F2");
+                                                            string materialdataname = "";
+                                                            string materialConfig = targetComponent.ReferencedConfiguration;
+                                                            if (string.IsNullOrWhiteSpace(materialConfig))
+                                                            {
+                                                                materialConfig = "Default";
+                                                            }
+                                                            string materialname = part.GetMaterialPropertyName2(materialConfig, out materialdataname) ?? string.Empty;
+                                                            if (string.IsNullOrWhiteSpace(materialname) && !string.Equals(materialConfig, "Default", StringComparison.OrdinalIgnoreCase))
+                                                            {
+                                                                materialname = part.GetMaterialPropertyName2("Default", out materialdataname) ?? string.Empty;
+                                                            }
+                                                            if (IsStainlessMaterial(materialname) || IsStainlessMaterial(materialdataname))
+                                                            {
+                                                                material = "SUS " + thickness.ToString("F2");
+                                                            }
                                                           partDoc.DeleteCustomInfo2("", "材料");
                                                             bool materialResult=partDoc.AddCustomInfo2("材料", (int)swCustomInfoType_e.swCustomInfoText, material);
                                                             Console.WriteLine($"添加材料自定义信息结果: {materialResult},partname:{partname},material:{material}");
@@ -385,9 +436,9 @@ namespace tools
                                         double[] dimensions = new double[] { maxLength, minLength, thickness };
                                         Array.Sort(dimensions);
                                         dimensionStr = $"{FormatDimension(dimensions[0])}x{FormatDimension(dimensions[1])}x{FormatDimension(dimensions[2])}";
-                                        categoryStr = "钣金件";
+                                    categoryStr = "钣金件";
                                         
-                                        Debug.WriteLine($"钣金件 '{partname}' 下料尺寸: {dimensionStr}");
+                                        Debug.WriteLine($"钣金件 '{partname}' 下料尺寸: {dimensionStr}, 类别: {categoryStr}");
                                     }
                                     else if (isSheetMetal)
                                     {
@@ -401,6 +452,7 @@ namespace tools
                                         // 非钣金件，使用组件边界框获取尺寸（避免打开零件文档）
                                         // 注意：GetBox 对未加载的子装配体可能返回 null
                                         object boxObj = targetComponent.GetBox(false, false);
+                                        double minDimensionMm = double.MaxValue;
                                         
                                         if (boxObj != null && boxObj is double[])
                                         {
@@ -418,6 +470,7 @@ namespace tools
                                             // 将尺寸放入数组并排序
                                             double[] dimensions = new double[] { length, width, height };
                                             Array.Sort(dimensions);
+                                            minDimensionMm = dimensions[0];
                                             
                                             dimensionStr = FormatDimension(dimensions[0]) + "x" + FormatDimension(dimensions[1]) + "x" + FormatDimension(dimensions[2]);
                                             
@@ -434,6 +487,7 @@ namespace tools
                                             // 将尺寸放入数组并排序
                                             double[] dims = new double[] { dimensions.length, dimensions.width, dimensions.height };
                                             Array.Sort(dims);
+                                            minDimensionMm = dims[0];
                                             dimensionStr = $"{FormatDimension(dims[0])}x{FormatDimension(dims[1])}x{FormatDimension(dims[2])}";
                                             if (partname != "脚杯座")
                                                 dimensionStr = dimensionStr.Replace("40x60", "2.0x40x60")
@@ -460,8 +514,38 @@ namespace tools
                                                 categoryStr = "其他";
                                             }
                                         }
+
+                                        // 钣金BOM模式下，非钣金件若最小尺寸<10mm，提示可能存在未转换的钣金件
+                                        if (filterSheetMetal && categoryStr != "钣金件" && minDimensionMm < 10)
+                                        {
+                                            string suspect = $"{partname}({FormatDimension(minDimensionMm)}mm)";
+                                            if (!suspectedUnconvertedSheetMetalParts.Contains(suspect))
+                                            {
+                                                suspectedUnconvertedSheetMetalParts.Add(suspect);
+                                            }
+                                        }
                                     }
                                     
+                                    // 过滤模式：只保留匹配类型
+                                    bool shouldKeepRow = true;
+                                    if (filterSheetMetal)
+                                    {
+                                        shouldKeepRow = categoryStr == "钣金件";
+                                    }
+                                    else if (filterTube)
+                                    {
+                                        shouldKeepRow = categoryStr == "管件";
+                                    }
+
+                                    if (!shouldKeepRow)
+                                    {
+                                        bool deleted = swTableAnnotation.DeleteRow2(i, false);
+                                        Console.WriteLine($"删除不匹配类型行: row={i}, part={partname}, category={categoryStr}, target={exportType}, result={deleted}");
+                                        currentRowCount--;
+                                        i--;
+                                        continue;
+                                    }
+
                                     // 优化4: 批量设置表格文本，减少COM调用
                                     List<(int row, int col, string text)> pendingUpdates = new List<(int, int, string)>();
                                     
@@ -483,14 +567,9 @@ namespace tools
                                         swTableAnnotation.set_Text(update.row, update.col, update.text);
                                     }
                                 }
-                                else
-                                {
-                                    // 没有在字典中找到匹配的组件
-                                    Console.WriteLine($"警告：未找到组件 '{partname}'");
-                                }
                                 
                                 
-                            }}
+                            }
                             catch (Exception ex)
                             {
                                 Debug.WriteLine($"获取管件 '{partname}' 尺寸时出错: {ex.Message}");
@@ -513,7 +592,10 @@ namespace tools
                
                 
                 string excelpath = swModel.GetPathName().Replace("SLDASM", "xlsx");
-                if (partbom) excelpath = swModel.GetPathName().Replace(".SLDASM", "_part.xlsx");
+                if (filterPart) excelpath = swModel.GetPathName().Replace(".SLDASM", "_part.xlsx");
+                if (filterSheetMetal) excelpath = swModel.GetPathName().Replace(".SLDASM", "_sheetmetal.xlsx");
+                if (filterTube) excelpath = swModel.GetPathName().Replace(".SLDASM", "_tube.xlsx");
+                if (isAssemblyMode) excelpath = swModel.GetPathName().Replace(".SLDASM", "_asm.xlsx");
                 
                 // 只在需要导出Excel时保存
                 if (exportExcel)
@@ -537,6 +619,13 @@ namespace tools
                         UseShellExecute = true
                     };
                     Process.Start(startInfo);
+                }
+
+                if (filterSheetMetal && suspectedUnconvertedSheetMetalParts.Count > 0)
+                {
+                    string preview = string.Join("，", suspectedUnconvertedSheetMetalParts.GetRange(0, Math.Min(8, suspectedUnconvertedSheetMetalParts.Count)));
+                    string tip = $"检测到{suspectedUnconvertedSheetMetalParts.Count}个非钣金件最小尺寸小于10mm，可能有未转化的钣金件。\n示例：{preview}";
+                    swApp.SendMsgToUser2(tip, (int)swMessageBoxIcon_e.swMbWarning, (int)swMessageBoxBtn_e.swMbOk);
                 }
                 
                 Console.WriteLine($"\n=== BOM导出完成 ===");
@@ -570,6 +659,19 @@ namespace tools
             {
                 return value.ToString("F1");
             }
+        }
+
+        static private bool IsStainlessMaterial(string materialText)
+        {
+            if (string.IsNullOrWhiteSpace(materialText))
+            {
+                return false;
+            }
+
+            string normalized = materialText.Trim().ToLowerInvariant();
+            return normalized.Contains("不锈钢")
+                || normalized.Contains("sus")
+                || normalized.Contains("stainless");
         }
         
         /// <summary>

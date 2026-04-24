@@ -30,12 +30,15 @@ namespace SolidWorksAddinStudy
         private static int addinCookieID;
         private static bool consoleOpened = false;
         private static ConsoleOutputForm? consoleForm;
+        private static System.Threading.SynchronizationContext? mainSynchronizationContext;
         
         // 任务窗格相关
         private static ITaskpaneView? pTaskPanView;
         private static PartStatusControl? TaskPanWinFormControl;
         private static ITaskpaneView? workProjectTaskPaneView;
         private static WorkProjectTaskPaneControl? workProjectTaskPaneControl;
+        private static ITaskpaneView? equationModelTaskPaneView;
+        private static EquationModelTaskPaneControl? equationModelTaskPaneControl;
 
 
         /// <summary>
@@ -103,6 +106,7 @@ namespace SolidWorksAddinStudy
         public bool ConnectToSW(object ThisSW, int Cookie)
         {
             swApp = (SldWorks)ThisSW;
+            mainSynchronizationContext = System.Threading.SynchronizationContext.Current;
             addinCookieID = Cookie;
             swApp.SetAddinCallbackInfo(0, this, addinCookieID);
             iCmdMgr = swApp.GetCommandManager(addinCookieID);
@@ -125,10 +129,12 @@ namespace SolidWorksAddinStudy
             
             // 初始化任务窗格
             InitializeTaskPane();
-            
+
             // 设置asm2bom的任务窗格更新回调
             tools.asm2bom.TaskPaneUpdateCallback = OnBomDataUpdated;
-           
+
+            StartCommandBridgeServer();
+
             return true;
         }
 /// <summary>
@@ -224,7 +230,8 @@ namespace SolidWorksAddinStudy
         public bool DisconnectFromSW()
         {
             Debug.WriteLine("插件已卸载");
-            
+            StopCommandBridgeServer();
+
             // 清理任务窗格
             CleanupTaskPane();
         
@@ -377,7 +384,16 @@ namespace SolidWorksAddinStudy
                 {
                     workProjectTaskPaneControl = new WorkProjectTaskPaneControl();
                     workProjectTaskPaneView.DisplayWindowFromHandlex64(workProjectTaskPaneControl.Handle.ToInt64());
+                    workProjectTaskPaneControl.PromptFollowUpRemindersAtStartup();
                     Debug.WriteLine("工作项目记录任务窗格已初始化");
+                }
+
+                equationModelTaskPaneView = swApp.CreateTaskpaneView2("", "机型方程式");
+                if (equationModelTaskPaneView != null)
+                {
+                    equationModelTaskPaneControl = new EquationModelTaskPaneControl();
+                    equationModelTaskPaneView.DisplayWindowFromHandlex64(equationModelTaskPaneControl.Handle.ToInt64());
+                    Debug.WriteLine("机型方程式任务窗格已初始化");
                 }
             }
             catch (Exception ex)
@@ -404,6 +420,12 @@ namespace SolidWorksAddinStudy
                     workProjectTaskPaneControl.Dispose();
                     workProjectTaskPaneControl = null;
                 }
+
+                if (equationModelTaskPaneControl != null)
+                {
+                    equationModelTaskPaneControl.Dispose();
+                    equationModelTaskPaneControl = null;
+                }
                 
                 if (pTaskPanView != null)
                 {
@@ -415,6 +437,12 @@ namespace SolidWorksAddinStudy
                 {
                     workProjectTaskPaneView.DeleteView();
                     workProjectTaskPaneView = null;
+                }
+
+                if (equationModelTaskPaneView != null)
+                {
+                    equationModelTaskPaneView.DeleteView();
+                    equationModelTaskPaneView = null;
                 }
             }
             catch (Exception ex)
@@ -436,9 +464,19 @@ namespace SolidWorksAddinStudy
             return workProjectTaskPaneControl;
         }
 
+        public static EquationModelTaskPaneControl? GetEquationModelTaskPaneControl()
+        {
+            return equationModelTaskPaneControl;
+        }
+
         public static SldWorks? GetSwApp()
         {
             return swApp;
+        }
+
+        public static System.Threading.SynchronizationContext? GetMainSynchronizationContext()
+        {
+            return mainSynchronizationContext;
         }
         
         /// <summary>

@@ -12,6 +12,20 @@ using System.Windows.Forms;
 namespace tools
 {
     /// <summary>
+    /// 一条方程式快照（用于机型切换窗格持久化）。
+    /// </summary>
+    [Serializable]
+    public class EquationSnapshotEntry
+    {
+        public string PartStorageKey { get; set; } = "";
+        public string PartDisplayLabel { get; set; } = "";
+        public int EquationIndex { get; set; }
+        public string VariableName { get; set; } = "";
+        /// <summary>方程式右侧（与修改方程式对话框输入一致）</summary>
+        public string ValueExpression { get; set; } = "";
+    }
+
+    /// <summary>
     /// 方程式管理器：支持单零件或多零件统一窗口；列表项带零件前缀以区分重名变量。
     /// </summary>
     public class EquationModifier
@@ -87,8 +101,8 @@ namespace tools
                 var rows = BuildEquationRows(visibleParts);
                 if (rows.Count == 0)
                 {
-                    swApp.SendMsgToUser("所选零件中均没有方程式");
-                    return "所选零件中均没有方程式";
+                    swApp.SendMsgToUser("所选零件中没有「全局变量」方程式（尺寸方程已忽略）");
+                    return "所选零件中没有全局变量方程式";
                 }
 
                 var applied = new[] { false };
@@ -193,6 +207,11 @@ namespace tools
 
                 for (int i = 0; i < count; i++)
                 {
+                    if (!eqnMgr.get_GlobalVariable(i))
+                    {
+                        continue;
+                    }
+
                     rows.Add(new EquationListRow
                     {
                         Part = p,
@@ -225,7 +244,7 @@ namespace tools
                     })
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
-                form.Text = rows.Count > 0 ? $"修改方程式（共 {partCount} 个零件）" : "修改方程式";
+                form.Text = rows.Count > 0 ? $"修改全局变量（共 {partCount} 个零件）" : "修改全局变量";
                 form.Size = new Size(880, 520);
                 form.StartPosition = FormStartPosition.CenterScreen;
                 form.MinimumSize = new Size(640, 420);
@@ -244,7 +263,7 @@ namespace tools
 
                 var titleLabel = new Label
                 {
-                    Text = "选择一条方程式；同名变量请认准左侧 [零件: …] 标签。可多次「应用」后点「完成」。",
+                    Text = "此处仅列出「全局变量」方程式（尺寸驱动方程已隐藏）。同名变量请认准 [零件: …] 标签；可多次「应用」，满意后点「完成」关闭。",
                     Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold, GraphicsUnit.Point),
                     AutoSize = true
                 };
@@ -373,7 +392,7 @@ namespace tools
 
                 var buttonPanel = new FlowLayoutPanel
                 {
-                    FlowDirection = FlowDirection.RightToLeft,
+                    FlowDirection = FlowDirection.LeftToRight,
                     AutoSize = true,
                     WrapContents = false,
                     Padding = new Padding(0, 10, 0, 0)
@@ -383,9 +402,9 @@ namespace tools
                 var doneButton = new Button { Text = "完成", Width = 80, DialogResult = DialogResult.OK };
                 var applyButton = new Button { Text = "应用", Width = 80 };
 
-                buttonPanel.Controls.Add(cancelButton);
-                buttonPanel.Controls.Add(doneButton);
                 buttonPanel.Controls.Add(applyButton);
+                buttonPanel.Controls.Add(doneButton);
+                buttonPanel.Controls.Add(cancelButton);
 
                 mainPanel.Controls.Add(buttonPanel, 0, 4);
 
@@ -415,7 +434,7 @@ namespace tools
                         return;
                     }
 
-                    if (!ModifyEquationByIndex(mgr, row.Part, row.EquationIndex, newValue, swApp, row.PartDisplayLabel))
+                    if (!TryApplyEquationRhs(mgr, row.Part, row.EquationIndex, newValue, swApp, row.PartDisplayLabel))
                     {
                         return;
                     }
@@ -448,20 +467,86 @@ namespace tools
                     }
                 };
 
-                return form.ShowDialog() == DialogResult.OK;
+                bool accepted = form.ShowDialog() == DialogResult.OK;
+                RebuildDistinctEquationPartsAndAssembly(swApp, rows);
+                return accepted;
             }
         }
 
         /// <summary>
-        /// 根据索引修改方程式
+        /// 关闭方程式窗口或批量应用后：重建涉及零件，并在当前文档为装配体时重建装配体。
         /// </summary>
-        private static bool ModifyEquationByIndex(
+        private static void RebuildDistinctEquationPartsAndAssembly(SldWorks swApp, List<EquationListRow> rows)
+        {
+            if (swApp == null || rows == null || rows.Count == 0)
+            {
+                return;
+            }
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+            {
+                if (row.Part == null)
+                {
+                    continue;
+                }
+
+                string k = GetPartStorageKey(row.Part);
+                if (string.IsNullOrEmpty(k))
+                {
+                    continue;
+                }
+
+                if (!seen.Add(k))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    row.Part.EditRebuild3();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"零件重建失败 {row.Part.GetTitle()}: {ex.Message}");
+                }
+            }
+
+            TryRebuildActiveAssemblyDocument(swApp);
+        }
+
+        private static void TryRebuildActiveAssemblyDocument(SldWorks swApp)
+        {
+            if (swApp == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var active = swApp.ActiveDoc as ModelDoc2;
+                if (active != null && active.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
+                {
+                    active.EditRebuild3();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"装配体重建失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 根据索引修改方程式（供内部与一键应用快照使用）。
+        /// </summary>
+        public static bool TryApplyEquationRhs(
             EquationMgr eqnMgr,
             ModelDoc2 swModel,
             int selectedIndex,
             string newValue,
             SldWorks swApp,
-            string? partDisplayLabel)
+            string? partDisplayLabel,
+            string? expectedVariableName = null)
         {
             try
             {
@@ -474,7 +559,8 @@ namespace tools
 
                 string calculatedValue = EvaluateExpression(newValue);
 
-                string originalEquation = eqnMgr.get_Equation(selectedIndex);
+                int targetIndex = selectedIndex;
+                string originalEquation = eqnMgr.get_Equation(targetIndex);
                 string[] originalParts = originalEquation.Split(new[] { '=' }, 2);
 
                 if (originalParts.Length < 2)
@@ -488,7 +574,40 @@ namespace tools
 
                 string newEquation = $"{equationName}={calculatedValue}";
 
-                eqnMgr.set_Equation(selectedIndex, newEquation);
+                eqnMgr.set_Equation(targetIndex, newEquation);
+
+                // 关键校验：必须回读确认已写入，避免“表里改了、模型没改”的假成功。
+                string actualEquation = eqnMgr.get_Equation(targetIndex);
+                string actualValue = ExtractEquationValue(actualEquation);
+                if (!IsEquationValueEquivalent(actualValue, calculatedValue))
+                {
+                    int fallbackIndex = FindEquationIndexByVariableName(eqnMgr, expectedVariableName);
+                    if (fallbackIndex >= 0 && fallbackIndex != targetIndex)
+                    {
+                        string fbEq = eqnMgr.get_Equation(fallbackIndex);
+                        string[] fbParts = fbEq.Split(new[] { '=' }, 2);
+                        if (fbParts.Length >= 2)
+                        {
+                            string fbName = fbParts[0];
+                            eqnMgr.set_Equation(fallbackIndex, $"{fbName}={calculatedValue}");
+                            string fbActual = ExtractEquationValue(eqnMgr.get_Equation(fallbackIndex));
+                            if (IsEquationValueEquivalent(fbActual, calculatedValue))
+                            {
+                                targetIndex = fallbackIndex;
+                                equationName = fbName;
+                                actualValue = fbActual;
+                            }
+                        }
+                    }
+
+                    if (!IsEquationValueEquivalent(actualValue, calculatedValue))
+                    {
+                        string err = $"方程式写入未生效：目标={calculatedValue}，实际={actualValue}";
+                        Debug.WriteLine(err);
+                        swApp?.SendMsgToUser(err);
+                        return false;
+                    }
+                }
 
                 Debug.WriteLine($"方程式已更新: {newEquation}");
 
@@ -513,6 +632,7 @@ namespace tools
                 }
 
                 AiOperationBrief.Log($"改方程式：零件={partTag}，变量={varDisplay}，新值={valDisplay}");
+
                 return true;
             }
             catch (Exception ex)
@@ -521,6 +641,445 @@ namespace tools
                 swApp?.SendMsgToUser($"修改方程式时出错: {ex.Message}");
                 return false;
             }
+        }
+
+        private static int FindEquationIndexByVariableName(EquationMgr eqnMgr, string? variableName)
+        {
+            string v = (variableName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(v) || eqnMgr == null)
+            {
+                return -1;
+            }
+
+            string normalized = NormalizeVariableName(v);
+            int count = eqnMgr.GetCount();
+            for (int i = 0; i < count; i++)
+            {
+                if (!eqnMgr.get_GlobalVariable(i))
+                {
+                    continue;
+                }
+
+                string eq = eqnMgr.get_Equation(i);
+                string[] parts = eq.Split(new[] { '=' }, 2);
+                if (parts.Length < 2)
+                {
+                    continue;
+                }
+
+                if (string.Equals(NormalizeVariableName(parts[0]), normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static string NormalizeVariableName(string variableName)
+        {
+            return (variableName ?? "")
+                .Trim()
+                .Replace("\"", "")
+                .Replace("“", "")
+                .Replace("”", "")
+                .Replace(" ", "");
+        }
+
+        private static bool IsEquationValueEquivalent(string actualValue, string expectedValue)
+        {
+            string a = NormalizeEquationValue(actualValue);
+            string b = NormalizeEquationValue(expectedValue);
+            if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (double.TryParse(a, out double ad) && double.TryParse(b, out double bd))
+            {
+                return Math.Abs(ad - bd) < 1e-9;
+            }
+
+            return false;
+        }
+
+        private static string NormalizeEquationValue(string value)
+        {
+            return (value ?? "")
+                .Trim()
+                .Replace("\"", "")
+                .Replace("“", "")
+                .Replace("”", "")
+                .Replace(" ", "");
+        }
+
+        public static string GetPartStorageKey(ModelDoc2 p)
+        {
+            if (p == null)
+            {
+                return "";
+            }
+
+            string path = p.GetPathName();
+            return string.IsNullOrEmpty(path) ? (p.GetTitle() ?? "") : path;
+        }
+
+        /// <summary>
+        /// 读取多个零件的全部方程式为快照列表。
+        /// </summary>
+        public static List<EquationSnapshotEntry> CollectEquationSnapshots(SldWorks swApp, IList<ModelDoc2> parts)
+        {
+            var result = new List<EquationSnapshotEntry>();
+            if (parts == null || parts.Count == 0)
+            {
+                return result;
+            }
+
+            var unique = DeduplicateParts(parts);
+            if (unique.Count == 0)
+            {
+                return result;
+            }
+
+            foreach (var p in unique)
+            {
+                EquationMgr mgr = null;
+                try
+                {
+                    mgr = (EquationMgr)p.GetEquationMgr();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"获取方程式管理器失败 {p.GetTitle()}: {ex.Message}");
+                }
+
+                if (mgr == null)
+                {
+                    continue;
+                }
+
+                int count = mgr.GetCount();
+                if (count <= 0)
+                {
+                    continue;
+                }
+
+                string label = GetPartDisplayLabel(p, unique);
+                string storageKey = GetPartStorageKey(p);
+
+                for (int i = 0; i < count; i++)
+                {
+                    if (!mgr.get_GlobalVariable(i))
+                    {
+                        continue;
+                    }
+
+                    string equation = mgr.get_Equation(i);
+                    string[] eqParts = equation.Split(new[] { '=' }, 2);
+                    if (eqParts.Length < 2)
+                    {
+                        continue;
+                    }
+
+                    result.Add(new EquationSnapshotEntry
+                    {
+                        PartStorageKey = storageKey,
+                        PartDisplayLabel = label,
+                        EquationIndex = i,
+                        VariableName = eqParts[0].Trim(),
+                        ValueExpression = ExtractEquationValue(equation)
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 从装配体收集不重复的零件文档（.sldprt）。
+        /// </summary>
+        public static List<ModelDoc2> CollectDistinctPartDocsFromAssembly(SldWorks swApp, ModelDoc2 assemblyModel)
+        {
+            var list = new List<ModelDoc2>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (swApp == null || assemblyModel == null || assemblyModel.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                return list;
+            }
+
+            var assy = (AssemblyDoc)assemblyModel;
+            object[] comps = (object[])assy.GetComponents(false);
+            if (comps == null)
+            {
+                return list;
+            }
+
+            foreach (object obj in comps)
+            {
+                var comp = obj as Component2;
+                if (comp == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (!comp.IsLoaded())
+                    {
+                        continue;
+                    }
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                string path = comp.GetPathName();
+                if (string.IsNullOrEmpty(path) || !path.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                ModelDoc2 partDoc = TryGetComponentPartDoc(swApp, comp);
+                if (partDoc == null)
+                {
+                    continue;
+                }
+
+                string key = GetPartStorageKey(partDoc);
+                if (string.IsNullOrEmpty(key))
+                {
+                    continue;
+                }
+
+                if (seen.Add(key))
+                {
+                    list.Add(partDoc);
+                }
+            }
+
+            return list;
+        }
+
+        private static ModelDoc2 TryGetComponentPartDoc(SldWorks swApp, Component2 comp)
+        {
+            ModelDoc2 partDoc = comp.GetModelDoc2() as ModelDoc2;
+            if (partDoc == null)
+            {
+                string path = comp.GetPathName();
+                if (string.IsNullOrEmpty(path))
+                {
+                    return null;
+                }
+
+                try
+                {
+                    int errors = 0;
+                    int warnings = 0;
+                    partDoc = swApp.OpenDoc6(
+                        path,
+                        (int)swDocumentTypes_e.swDocPART,
+                        (int)swOpenDocOptions_e.swOpenDocOptions_Silent,
+                        "",
+                        ref errors,
+                        ref warnings) as ModelDoc2;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"打开零件失败 {path}: {ex.Message}");
+                    return null;
+                }
+            }
+
+            return partDoc;
+        }
+
+        /// <summary>
+        /// 将快照批量写入对应零件（按零件分组后按索引应用）。
+        /// </summary>
+        public static string ApplyEquationSnapshots(SldWorks swApp, IList<EquationSnapshotEntry> snapshots)
+        {
+            if (swApp == null || snapshots == null || snapshots.Count == 0)
+            {
+                return "没有可应用的方程式记录";
+            }
+
+            int ok = 0;
+            int fail = 0;
+            var touchedParts = new Dictionary<string, ModelDoc2>(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                foreach (var group in snapshots.GroupBy(s => s.PartStorageKey, StringComparer.OrdinalIgnoreCase))
+                {
+                    ModelDoc2 part = ResolvePartDocByStorageKey(swApp, group.Key);
+                    if (part == null)
+                    {
+                        fail += group.Count();
+                        continue;
+                    }
+
+                    string partKey = GetPartStorageKey(part);
+                    if (!string.IsNullOrWhiteSpace(partKey) && !touchedParts.ContainsKey(partKey))
+                    {
+                        touchedParts[partKey] = part;
+                    }
+
+                    EquationMgr mgr = null;
+                    try
+                    {
+                        mgr = (EquationMgr)part.GetEquationMgr();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"获取方程式管理器失败 {group.Key}: {ex.Message}");
+                        fail += group.Count();
+                        continue;
+                    }
+
+                    if (mgr == null)
+                    {
+                        fail += group.Count();
+                        continue;
+                    }
+
+                    // 与右键“修改方程式”流程对齐：先确保零件可见并激活，再执行写入。
+                    TryEnsurePartVisibleAndActive(swApp, part);
+
+                    foreach (var entry in group.OrderBy(e => e.EquationIndex))
+                    {
+                        if (TryApplyEquationRhs(mgr, part, entry.EquationIndex, entry.ValueExpression, swApp, entry.PartDisplayLabel, entry.VariableName))
+                        {
+                            ok++;
+                        }
+                        else
+                        {
+                            fail++;
+                        }
+                    }
+
+                    try
+                    {
+                        part.EditRebuild3();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"重建失败 {part.GetTitle()}: {ex.Message}");
+                    }
+                }
+            }
+            finally
+            {
+                // 与右键流程一致：参与修改的零件收尾统一恢复为不可见。
+                foreach (var part in touchedParts.Values)
+                {
+                    try
+                    {
+                        part.Visible = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"恢复零件不可见失败 {part.GetTitle()}: {ex.Message}");
+                    }
+                }
+            }
+
+            TryRebuildActiveAssemblyDocument(swApp);
+
+            return $"一键应用完成：成功 {ok} 条，失败 {fail} 条";
+        }
+
+        private static void TryEnsurePartVisibleAndActive(SldWorks swApp, ModelDoc2 part)
+        {
+            if (swApp == null || part == null)
+            {
+                return;
+            }
+
+            try
+            {
+                part.Visible = true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"设置零件可见失败 {part.GetTitle()}: {ex.Message}");
+            }
+
+            try
+            {
+                string title = part.GetTitle();
+                if (!string.IsNullOrWhiteSpace(title))
+                {
+                    int errors = 0;
+                    swApp.ActivateDoc3(
+                        title,
+                        true,
+                        (int)swRebuildOnActivation_e.swDontRebuildActiveDoc,
+                        ref errors);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"激活零件失败 {part.GetTitle()}: {ex.Message}");
+            }
+        }
+
+        private static ModelDoc2 ResolvePartDocByStorageKey(SldWorks swApp, string storageKey)
+        {
+            if (string.IsNullOrWhiteSpace(storageKey))
+            {
+                return null;
+            }
+
+            try
+            {
+                object[] docs = (object[])swApp.GetDocuments();
+                if (docs != null)
+                {
+                    foreach (object d in docs)
+                    {
+                        var md = d as ModelDoc2;
+                        if (md == null)
+                        {
+                            continue;
+                        }
+
+                        string k = GetPartStorageKey(md);
+                        if (string.Equals(k, storageKey, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return md;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"枚举文档失败: {ex.Message}");
+            }
+
+            bool looksLikePath = storageKey.IndexOf('\\') >= 0 || storageKey.IndexOf('/') >= 0;
+            if (looksLikePath && File.Exists(storageKey))
+            {
+                try
+                {
+                    int errors = 0;
+                    int warnings = 0;
+                    return swApp.OpenDoc6(
+                        storageKey,
+                        (int)swDocumentTypes_e.swDocPART,
+                        (int)swOpenDocOptions_e.swOpenDocOptions_Silent,
+                        "",
+                        ref errors,
+                        ref warnings) as ModelDoc2;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"打开零件失败 {storageKey}: {ex.Message}");
+                }
+            }
+
+            return null;
         }
 
         private static string ExtractEquationValue(string equation)

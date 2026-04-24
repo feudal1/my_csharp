@@ -1,1 +1,0 @@
-dotnet run --project "E:\cqh\code\my_c#\ctools\ctool.csproj"

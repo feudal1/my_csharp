@@ -21,6 +21,8 @@ namespace tools
                 Console.WriteLine("错误：无法获取文件所在目录。");
                 
             }
+            string folderName = Path.GetFileName(directory ?? string.Empty);
+            string outputRootName = string.IsNullOrWhiteSpace(folderName) ? "钣金" : $"{folderName}钣金";
             
           
          
@@ -73,7 +75,7 @@ namespace tools
                 Debug.WriteLine($"{partDoc.GetPathName()},type:assembly");
                 swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfOutputFonts, 1);
                 swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R2000);
-                outputfile = directory + "\\" + "出图" + "\\" + "焊接图";
+                outputfile = directory + "\\" + outputRootName + "\\" + "焊接图";
             }
             else
             {
@@ -83,7 +85,7 @@ namespace tools
                 if (thickness == 0)
                 {
                     swApp.SetUserPreferenceIntegerValue((int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swDxfFormat_e.swDxfFormat_R12);
-                    outputfile = directory + "\\" + "出图" + "\\" + "CNC";
+                    outputfile = directory + "\\" + outputRootName + "\\" + "CNC";
                 }
                 else
                 {
@@ -96,7 +98,7 @@ namespace tools
                     var meterialthick = thickness.ToString();
                     Debug.WriteLine("meterial:"+meterial);
                     if (meterial.ToLower().Contains("sus"))meterialthick="sus"+ thickness.ToString() ;
-                    outputfile = directory + "\\" + "出图" + "\\" + "工程图" + "\\" +meterialthick;
+                    outputfile = directory + "\\" + outputRootName + "\\" + "工程图" + "\\" + meterialthick;
                     
                 }
             }
