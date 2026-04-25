@@ -1,0 +1,129 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using Newtonsoft.Json;
+
+namespace SolidWorksAddinStudy.Services
+{
+    /// <summary>
+    /// 按装配体路径持久化「零件处理状态」任务窗格中的出图状态（项目制）。
+    /// </summary>
+    public static class PartStatusProjectStore
+    {
+        private static readonly object FileLock = new object();
+
+        private static string RootDirectory =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SolidWorksAddinStudy", "part_status_by_assembly");
+
+        private class PersistedProject
+        {
+            public string AssemblyPath { get; set; } = string.Empty;
+            public Dictionary<string, string> PartDrawnByName { get; set; } =
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static string GetStoreFilePath(string assemblyFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(assemblyFullPath))
+            {
+                throw new ArgumentException("装配体路径不能为空", nameof(assemblyFullPath));
+            }
+
+            string normalized = assemblyFullPath.Trim();
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(normalized));
+                string name = BitConverter.ToString(hash, 0, 12).Replace("-", string.Empty) + ".json";
+                return Path.Combine(RootDirectory, name);
+            }
+        }
+
+        private static PersistedProject ReadProject(string assemblyFullPath)
+        {
+            lock (FileLock)
+            {
+                string path = GetStoreFilePath(assemblyFullPath);
+                if (!File.Exists(path))
+                {
+                    return new PersistedProject { AssemblyPath = assemblyFullPath.Trim() };
+                }
+
+                try
+                {
+                    string json = File.ReadAllText(path, Encoding.UTF8);
+                    PersistedProject? loaded = JsonConvert.DeserializeObject<PersistedProject>(json);
+                    if (loaded?.PartDrawnByName == null)
+                    {
+                        return new PersistedProject { AssemblyPath = assemblyFullPath.Trim() };
+                    }
+
+                    var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (KeyValuePair<string, string> kv in loaded.PartDrawnByName)
+                    {
+                        if (!string.IsNullOrWhiteSpace(kv.Key))
+                        {
+                            normalized[kv.Key] = kv.Value ?? "未出图";
+                        }
+                    }
+
+                    loaded.PartDrawnByName = normalized;
+                    return loaded;
+                }
+                catch
+                {
+                    return new PersistedProject { AssemblyPath = assemblyFullPath.Trim() };
+                }
+            }
+        }
+
+        private static void WriteProject(PersistedProject project, string assemblyFullPath)
+        {
+            lock (FileLock)
+            {
+                Directory.CreateDirectory(RootDirectory);
+                string path = GetStoreFilePath(assemblyFullPath);
+                project.AssemblyPath = assemblyFullPath.Trim();
+                string json = JsonConvert.SerializeObject(project, Formatting.Indented);
+                File.WriteAllText(path, json, Encoding.UTF8);
+            }
+        }
+
+        /// <summary>将已保存的出图状态合并到当前列表（按零件名称匹配）。</summary>
+        public static void MergePersistedDrawn(string assemblyFullPath, List<PartStatusInfo> parts)
+        {
+            if (string.IsNullOrWhiteSpace(assemblyFullPath) || parts == null || parts.Count == 0)
+            {
+                return;
+            }
+
+            PersistedProject disk = ReadProject(assemblyFullPath);
+            foreach (PartStatusInfo p in parts)
+            {
+                if (p == null || string.IsNullOrWhiteSpace(p.PartName))
+                {
+                    continue;
+                }
+
+                if (disk.PartDrawnByName.TryGetValue(p.PartName, out string saved) && !string.IsNullOrWhiteSpace(saved))
+                {
+                    p.IsDrawn = saved;
+                }
+            }
+        }
+
+        /// <summary>更新单个零件的出图状态并保存到当前项目文件。</summary>
+        public static void SavePartDrawn(string assemblyFullPath, string partName, string isDrawn)
+        {
+            if (string.IsNullOrWhiteSpace(assemblyFullPath) || string.IsNullOrWhiteSpace(partName))
+            {
+                return;
+            }
+
+            PersistedProject disk = ReadProject(assemblyFullPath);
+            disk.PartDrawnByName[partName] = isDrawn ?? "未出图";
+            WriteProject(disk, assemblyFullPath);
+        }
+    }
+}

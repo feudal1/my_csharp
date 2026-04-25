@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ 
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>annotations</Nullable>
+    <EnableComHosting>true</EnableComHosting>
+    <ComVisible>true</ComVisible>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <LangVersion>10.0</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <OutputType>Library</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+ 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <Optimize>False</Optimize>
+  </PropertyGroup>
+ 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <Optimize>False</Optimize>
+  </PropertyGroup>
+ 
+    <ItemGroup>
+      <Reference Include="accoremgd">
+        <HintPath>..\reference\accoremgd.dll</HintPath>
+        <Private>True</Private>
+        <CopyLocal>True</CopyLocal>
+      </Reference>
+      <Reference Include="Acdbmgd">
+        <HintPath>..\reference\acdbmgd.dll</HintPath>
+        <Private>True</Private>
+        <CopyLocal>True</CopyLocal>
+      </Reference>
+      <Reference Include="Acmgd">
+        <HintPath>..\reference\acmgd.dll</HintPath>
+        <Private>True</Private>
+        <CopyLocal>True</CopyLocal>
+      </Reference>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\share\share.csproj" />
+    </ItemGroup>
+ 
+</Project>
