@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -15,6 +16,7 @@ namespace tools
         private const double CandidateDisplayThreshold = 0.30;
         private static readonly TimeSpan CommandCacheTtl = TimeSpan.FromMinutes(10);
         private const int EquationTaskMaxAttempts = 4;
+        private static readonly List<string> CurrentTurnActionTrace = new List<string>();
 
         [STAThread]
         private static async Task Main()
@@ -56,6 +58,7 @@ namespace tools
                     continue;
                 }
                 string input = inputRaw!;
+                ResetTurnActionTrace();
 
                 if (string.Equals(input, "退出", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(input, "结束", StringComparison.OrdinalIgnoreCase) ||
@@ -202,7 +205,91 @@ namespace tools
                     continue;
                 }
 
-                var equationIntent = await TryExtractEquationUpdateIntentHybridAsync(input, llmService);
+                var relativeBatchTasks = await TryExtractRelativeBatchEquationTasksHybridAsync(input, llmService, swBridgeClient);
+                if (relativeBatchTasks.Count > 0)
+                {
+                    try
+                    {
+                        var messages = new List<string>();
+                        int successCount = 0;
+                        foreach (var task in relativeBatchTasks)
+                        {
+                            var result = ExecuteRelativeEquationUpdateTaskLoop(
+                                input,
+                                task.Keyword,
+                                task.Delta,
+                                swBridgeClient);
+                            messages.Add(result.Message);
+                            if (result.Success)
+                            {
+                                successCount++;
+                            }
+                        }
+
+                        bool allOk = successCount == relativeBatchTasks.Count;
+                        string observation = allOk
+                            ? $"动作成功：批量相对更新完成（成功 {successCount}/{relativeBatchTasks.Count}）"
+                            : $"动作失败：批量相对更新未完全成功（成功 {successCount}/{relativeBatchTasks.Count}）";
+                        string extra = string.Join("；", messages);
+                        await ReplyFromObservationAsync(
+                            llmService,
+                            chatHistory,
+                            historyStore,
+                            input,
+                            observation,
+                            extra);
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"批量修改方程式失败: {ex.Message}");
+                        continue;
+                    }
+                }
+
+                var absoluteBatchTasks = await TryExtractAbsoluteBatchEquationTasksHybridAsync(input, llmService, swBridgeClient);
+                if (absoluteBatchTasks.Count > 0)
+                {
+                    try
+                    {
+                        var messages = new List<string>();
+                        int successCount = 0;
+                        foreach (var task in absoluteBatchTasks)
+                        {
+                            var result = ExecuteEquationUpdateTaskLoopCore(
+                                input,
+                                task.Keyword,
+                                task.TargetValue,
+                                swBridgeClient);
+                            messages.Add(result.Message);
+                            if (result.Success)
+                            {
+                                successCount++;
+                            }
+                        }
+
+                        bool allOk = successCount == absoluteBatchTasks.Count;
+                        string observation = allOk
+                            ? $"动作成功：批量绝对更新完成（成功 {successCount}/{absoluteBatchTasks.Count}）"
+                            : $"动作失败：批量绝对更新未完全成功（成功 {successCount}/{absoluteBatchTasks.Count}）";
+                        string extra = string.Join("；", messages);
+                        await ReplyFromObservationAsync(
+                            llmService,
+                            chatHistory,
+                            historyStore,
+                            input,
+                            observation,
+                            extra);
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"批量设置方程式失败: {ex.Message}");
+                        continue;
+                    }
+                }
+
+                var equationIntent = await TryExtractEquationUpdateIntentHybridAsync(input, llmService, swBridgeClient);
                 if (equationIntent.IsMatch)
                 {
                     try
@@ -406,6 +493,14 @@ $@"你是 CAD 智能助手，你既能正常对话，也能在需要时建议可
             string observation,
             string extraContext)
         {
+            string traceText = BuildActionTraceSummary();
+            if (!string.IsNullOrWhiteSpace(traceText))
+            {
+                extraContext = string.IsNullOrWhiteSpace(extraContext)
+                    ? traceText
+                    : $"{extraContext}{Environment.NewLine}{traceText}";
+            }
+
             if (TryBuildDeterministicObservationReply(observation, extraContext, out string deterministicReply))
             {
                 Console.WriteLine("AI> ");
@@ -535,6 +630,484 @@ $@"用户输入：{userInput}
             }
 
             return string.Join(Environment.NewLine, lines);
+        }
+
+        private static bool TryExtractRelativeBatchEquationTasksByRule(
+            string input,
+            out List<(string Keyword, double Delta)> tasks)
+        {
+            tasks = new List<(string Keyword, double Delta)>();
+            string t = (input ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(t))
+            {
+                return false;
+            }
+
+            // 示例：管4长和管3长分别减300 / 把A、B都加20
+            Match opMatch = Regex.Match(t, @"(加|减)\s*([+-]?\d+(?:\.\d+)?)");
+            if (!opMatch.Success)
+            {
+                return false;
+            }
+
+            if (!double.TryParse(opMatch.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double amount))
+            {
+                return false;
+            }
+
+            double delta = opMatch.Groups[1].Value == "减" ? -Math.Abs(amount) : Math.Abs(amount);
+            string before = t.Substring(0, opMatch.Index);
+            before = before.Replace("分别", "")
+                           .Replace("都", "")
+                           .Replace("把", "")
+                           .Replace("将", "")
+                           .Replace("请", "")
+                           .Trim();
+
+            if (string.IsNullOrWhiteSpace(before))
+            {
+                return false;
+            }
+
+            before = Regex.Replace(
+                before,
+                @"(?<=[长宽高深厚径孔距数值量])(?=[\u4e00-\u9fa5A-Za-z_])",
+                "|");
+
+            var pieces = Regex.Split(before, @"和|及|并且|还有|、|,|，|\|")
+                .Select(x => NormalizeEquationKeyword(x))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (pieces.Count < 2)
+            {
+                return false;
+            }
+
+            tasks = pieces.Select(x => (x, delta)).ToList();
+            return true;
+        }
+
+        private static async Task<List<(string Keyword, double Delta)>> TryExtractRelativeBatchEquationTasksHybridAsync(
+            string input,
+            VlmService llmService,
+            SwCommandBridgeClient swBridgeClient)
+        {
+            var empty = new List<(string Keyword, double Delta)>();
+            string t = (input ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(t))
+            {
+                return empty;
+            }
+
+            // 1) LLM优先：更灵活地理解自然语言中的“批量相对更新”
+            try
+            {
+                string equationsSnapshot = BuildEquationSnapshotForLlm(swBridgeClient, maxCount: 120);
+                string llmPrompt =
+$@"请从下面这句中文中提取“批量相对修改方程变量”的任务。
+只返回 JSON，不要解释，不要 Markdown。
+
+JSON 格式：
+{{
+  ""intent"": ""relative_batch_update"" 或 ""other"",
+  ""tasks"": [
+    {{ ""variable"": ""变量名"", ""op"": ""add"" 或 ""sub"", ""amount"": 数字 }}
+  ]
+}}
+
+要求：
+- 只有当是“两个及以上变量”且表达的是相对变化（加/减）时，intent 才是 relative_batch_update
+- 若无法确定，返回 intent=other
+
+当前机型方程式快照（用于你理解变量名）：
+{equationsSnapshot}
+
+用户输入：{t}";
+
+                string llmRaw = await llmService.CallTextAsync(
+                    llmPrompt,
+                    systemPrompt: "你是 CAD 指令解析器，只输出严格 JSON。");
+
+                if (TryParseRelativeBatchTasksJson(llmRaw, out var llmTasks) && llmTasks.Count >= 2)
+                {
+                    return llmTasks;
+                }
+            }
+            catch
+            {
+                // LLM解析失败时自动回退规则
+            }
+
+            // 2) 规则兜底
+            if (TryExtractRelativeBatchEquationTasksByRule(t, out var ruleTasks))
+            {
+                return ruleTasks;
+            }
+
+            return empty;
+        }
+
+        private static bool TryParseRelativeBatchTasksJson(string raw, out List<(string Keyword, double Delta)> tasks)
+        {
+            tasks = new List<(string Keyword, double Delta)>();
+            string text = (raw ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            int start = text.IndexOf('{');
+            int end = text.LastIndexOf('}');
+            if (start < 0 || end <= start)
+            {
+                return false;
+            }
+
+            string json = text.Substring(start, end - start + 1);
+            JObject obj;
+            try
+            {
+                obj = JObject.Parse(json);
+            }
+            catch
+            {
+                return false;
+            }
+
+            string intent = (obj["intent"]?.ToString() ?? "").Trim().ToLowerInvariant();
+            if (intent != "relative_batch_update")
+            {
+                return false;
+            }
+
+            if (!(obj["tasks"] is JArray arr) || arr.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var item in arr)
+            {
+                string keyword = NormalizeEquationKeyword(item?["variable"]?.ToString() ?? "");
+                string op = (item?["op"]?.ToString() ?? "").Trim().ToLowerInvariant();
+                if (!double.TryParse(item?["amount"]?.ToString() ?? "", NumberStyles.Float, CultureInfo.InvariantCulture, out double amount))
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(keyword))
+                {
+                    continue;
+                }
+
+                double delta = op == "sub" ? -Math.Abs(amount) : Math.Abs(amount);
+                tasks.Add((keyword, delta));
+            }
+
+            tasks = tasks
+                .GroupBy(x => x.Keyword, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            return tasks.Count > 0;
+        }
+
+        private static async Task<List<(string Keyword, string TargetValue)>> TryExtractAbsoluteBatchEquationTasksHybridAsync(
+            string input,
+            VlmService llmService,
+            SwCommandBridgeClient swBridgeClient)
+        {
+            var empty = new List<(string Keyword, string TargetValue)>();
+            string t = (input ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(t))
+            {
+                return empty;
+            }
+
+            if (TryParseRelativeValueDirective(t, out _))
+            {
+                return empty;
+            }
+
+            try
+            {
+                string equationsSnapshot = BuildEquationSnapshotForLlm(swBridgeClient, maxCount: 120);
+                string llmPrompt =
+$@"请从下面这句中文中提取“批量绝对设置方程变量”的任务。
+只返回 JSON，不要解释，不要 Markdown。
+
+JSON 格式：
+{{
+  ""intent"": ""absolute_batch_update"" 或 ""other"",
+  ""targetValue"": ""目标值字符串"",
+  ""variables"": [""变量名1"", ""变量名2""]
+}}
+
+要求：
+- 只有当语句明确是“两个及以上变量设置为同一个目标值”时，intent 才是 absolute_batch_update
+- 像“都改成588 / 都设置为 1200”属于 absolute_batch_update
+- 若无法确定，返回 intent=other
+
+当前机型方程式快照（用于你理解变量名）：
+{equationsSnapshot}
+
+用户输入：{t}";
+
+                string llmRaw = await llmService.CallTextAsync(
+                    llmPrompt,
+                    systemPrompt: "你是 CAD 指令解析器，只输出严格 JSON。");
+
+                if (TryParseAbsoluteBatchTasksJson(llmRaw, out var llmTasks) && llmTasks.Count >= 2)
+                {
+                    return llmTasks;
+                }
+            }
+            catch
+            {
+                // LLM解析失败时自动回退规则
+            }
+
+            if (TryExtractAbsoluteBatchEquationTasksByRule(t, out var ruleTasks))
+            {
+                return ruleTasks;
+            }
+
+            return empty;
+        }
+
+        private static bool TryParseAbsoluteBatchTasksJson(string raw, out List<(string Keyword, string TargetValue)> tasks)
+        {
+            tasks = new List<(string Keyword, string TargetValue)>();
+            string text = (raw ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            int start = text.IndexOf('{');
+            int end = text.LastIndexOf('}');
+            if (start < 0 || end <= start)
+            {
+                return false;
+            }
+
+            string json = text.Substring(start, end - start + 1);
+            JObject obj;
+            try
+            {
+                obj = JObject.Parse(json);
+            }
+            catch
+            {
+                return false;
+            }
+
+            string intent = (obj["intent"]?.ToString() ?? "").Trim().ToLowerInvariant();
+            if (intent != "absolute_batch_update")
+            {
+                return false;
+            }
+
+            string targetValue = NormalizeEquationValueText(obj["targetValue"]?.ToString() ?? "");
+            if (string.IsNullOrWhiteSpace(targetValue))
+            {
+                return false;
+            }
+
+            if (!(obj["variables"] is JArray arr) || arr.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var item in arr)
+            {
+                string keyword = NormalizeEquationKeyword(item?.ToString() ?? "");
+                if (!string.IsNullOrWhiteSpace(keyword))
+                {
+                    tasks.Add((keyword, targetValue));
+                }
+            }
+
+            tasks = tasks
+                .GroupBy(x => x.Keyword, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            return tasks.Count > 0;
+        }
+
+        private static bool TryExtractAbsoluteBatchEquationTasksByRule(string input, out List<(string Keyword, string TargetValue)> tasks)
+        {
+            tasks = new List<(string Keyword, string TargetValue)>();
+            string t = (input ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(t))
+            {
+                return false;
+            }
+
+            Match m = Regex.Match(t, @"(.+?)(?:都)?\s*(?:改为|改成|改到|设置为|设为|修改为)\s*([^\s，。；;]+)");
+            if (!m.Success)
+            {
+                return false;
+            }
+
+            string before = (m.Groups[1].Value ?? "").Trim()
+                .Replace("分别", "")
+                .Replace("都", "")
+                .Replace("把", "")
+                .Replace("将", "")
+                .Replace("请", "")
+                .Trim();
+            string targetValue = NormalizeEquationValueText(m.Groups[2].Value);
+            if (string.IsNullOrWhiteSpace(before) || string.IsNullOrWhiteSpace(targetValue))
+            {
+                return false;
+            }
+
+            before = Regex.Replace(
+                before,
+                @"(?<=[长宽高深厚径孔距数值量])(?=[\u4e00-\u9fa5A-Za-z_])",
+                "|");
+
+            var pieces = Regex.Split(before, @"和|及|并且|还有|、|,|，|\|")
+                .Select(x => NormalizeEquationKeyword(x))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (pieces.Count < 2)
+            {
+                return false;
+            }
+
+            tasks = pieces.Select(x => (x, targetValue)).ToList();
+            return true;
+        }
+
+        private static string BuildEquationSnapshotForLlm(SwCommandBridgeClient swBridgeClient, int maxCount)
+        {
+            try
+            {
+                PrintActionCall("list_current_variant_equations", "keyword=<empty>, forLlmContext=true");
+                var (ok, message, equations) = swBridgeClient.ListCurrentVariantEquations("");
+                PrintActionResult("list_current_variant_equations", ok, ok ? $"forLlmContext count={equations?.Count ?? 0}" : message);
+                if (!ok || equations == null || equations.Count == 0)
+                {
+                    return "(当前无法读取方程式快照)";
+                }
+
+                int take = Math.Max(1, Math.Min(maxCount, equations.Count));
+                var lines = new List<string>(take + 1);
+                for (int i = 0; i < take; i++)
+                {
+                    var e = equations[i];
+                    lines.Add($"- [{e.Part}] #{e.Index} {e.Variable} = {e.Value}");
+                }
+
+                if (equations.Count > take)
+                {
+                    lines.Add($"... 其余 {equations.Count - take} 条省略");
+                }
+
+                return string.Join(Environment.NewLine, lines);
+            }
+            catch
+            {
+                return "(当前无法读取方程式快照)";
+            }
+        }
+
+        private static (bool Success, string Message) ExecuteRelativeEquationUpdateTaskLoop(
+            string userInput,
+            string equationKeyword,
+            double delta,
+            SwCommandBridgeClient swBridgeClient)
+        {
+            PrintActionCall("list_current_variant_equations", $"keyword={equationKeyword}, mode=relative");
+            var (okList, listMessage, equations) = swBridgeClient.ListCurrentVariantEquations(equationKeyword);
+            PrintActionResult("list_current_variant_equations", okList, listMessage);
+            if (!okList)
+            {
+                return (false, $"[{equationKeyword}] 查询失败：{listMessage}");
+            }
+
+            if (equations.Count == 0)
+            {
+                PrintActionCall("list_current_variant_equations", "keyword=<empty>, fallback=true, mode=relative");
+                var (okFallback, fallbackMessage, allEquations) = swBridgeClient.ListCurrentVariantEquations("");
+                PrintActionResult("list_current_variant_equations", okFallback, fallbackMessage);
+                if (!okFallback)
+                {
+                    return (false, $"[{equationKeyword}] 未命中且回退失败：{fallbackMessage}");
+                }
+
+                equations = allEquations ?? new List<BridgeEquationInfo>();
+                if (equations.Count == 0)
+                {
+                    return (false, $"[{equationKeyword}] 当前机型没有可修改方程式");
+                }
+            }
+
+            EquationNumericBoundsFilter valueBounds = EquationNumericBoundsFilter.ParseFromUserText(userInput);
+            if (valueBounds.IsActive)
+            {
+                int beforeCount = equations.Count;
+                equations = ApplyEquationNumericBoundsFilter(equations, valueBounds);
+                if (equations.Count == 0)
+                {
+                    return (false,
+                        $"[{equationKeyword}] 句中含数值范围条件，但当前机型没有「当前值为数字且满足该条件」的方程式（过滤前 {beforeCount} 条）。");
+                }
+            }
+
+            var rankedCandidates = equations
+                .OrderByDescending(e => ScoreEquationCandidate(e, equationKeyword, userInput))
+                .ThenBy(e => e.Part ?? string.Empty)
+                .ThenBy(e => e.Index)
+                .GroupBy(e => (e.Variable ?? "").Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            int maxAttempts = Math.Min(EquationTaskMaxAttempts, rankedCandidates.Count);
+            string lastFailure = "";
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                var chosen = rankedCandidates[attempt];
+                if (!TryParseEquationNumericValue(chosen.Value, out double currentValue))
+                {
+                    lastFailure = $"变量 {chosen.Variable} 当前值非数字：{chosen.Value}";
+                    continue;
+                }
+
+                double target = currentValue + delta;
+                string targetText = FormatNumericValue(target);
+                PrintActionCall(
+                    "update_current_variant_equation",
+                    $"variable={chosen.Variable}, relativeDelta={FormatNumericValue(delta)}, from={FormatNumericValue(currentValue)}, to={targetText}, applyNow=true, loopAttempt={attempt + 1}/{maxAttempts}");
+                var (okUpdate, msgUpdate) = swBridgeClient.UpdateCurrentVariantEquation(chosen.Variable, targetText, applyNow: true);
+                PrintActionResult("update_current_variant_equation", okUpdate, msgUpdate);
+                if (!okUpdate)
+                {
+                    lastFailure = msgUpdate;
+                    continue;
+                }
+
+                if (!IsApplyResultClean(msgUpdate, out string applyIssue))
+                {
+                    lastFailure = $"应用未完全成功（变量 {chosen.Variable}）：{applyIssue}";
+                    continue;
+                }
+
+                bool verifyOk = VerifyEquationUpdated(swBridgeClient, chosen.Variable, targetText);
+                if (verifyOk)
+                {
+                    return (true, $"[{equationKeyword}] 已将 {chosen.Variable} 从 {FormatNumericValue(currentValue)} 调整为 {targetText}（Δ={FormatNumericValue(delta)}）");
+                }
+
+                lastFailure = $"已执行但校验未通过（变量 {chosen.Variable} 目标 {targetText}）";
+            }
+
+            return (false, $"[{equationKeyword}] 重试 {maxAttempts} 次失败：{lastFailure}");
         }
 
         private static bool TryGetCommandsWithCache(
@@ -712,7 +1285,8 @@ $@"用户输入：{userInput}
 
         private static async Task<(bool IsMatch, string EquationKeyword, string TargetValue)> TryExtractEquationUpdateIntentHybridAsync(
             string input,
-            VlmService llmService)
+            VlmService llmService,
+            SwCommandBridgeClient swBridgeClient)
         {
             string t = (input ?? "").Trim();
             if (string.IsNullOrWhiteSpace(t))
@@ -723,6 +1297,7 @@ $@"用户输入：{userInput}
             // 1) 优先让 LLM 做结构化抽取，避免句式写死
             try
             {
+                string equationsSnapshot = BuildEquationSnapshotForLlm(swBridgeClient, maxCount: 80);
                 string llmPrompt =
 $@"请从下面这句中文中提取“是否要修改方程变量值”。
 只返回 JSON，不要解释，不要 Markdown。
@@ -730,8 +1305,12 @@ $@"请从下面这句中文中提取“是否要修改方程变量值”。
 字段要求：
 - intent: update_equation 或 other
 - variable: 变量关键词（没有就空字符串）
-- value: 目标值（没有就空字符串）
+- value: 目标值（没有就空字符串）；相对修改用「加 200」「减 10」或「+200」「-10」这类写法，不要用纯数字当增量除非是绝对目标值
 - confidence: 0~1
+- 若用户句子里有「大于/小于某数」等阈值，那是筛选当前值的语义，仍把 variable 写成其说的变量关键词即可（阈值由程序从原句解析）
+
+当前机型方程式快照（用于你理解变量名）：
+{equationsSnapshot}
 
 用户输入：{t}";
 
@@ -886,6 +1465,192 @@ $@"请从下面这句中文中提取“是否要修改方程变量值”。
             return s.Trim();
         }
 
+        /// <summary>
+        /// 从用户自然语言中解析对方程「当前数值」的区间条件（如「大于600的尺寸」），用于过滤候选，避免误选无关变量。
+        /// </summary>
+        private sealed class EquationNumericBoundsFilter
+        {
+            public bool IsActive =>
+                StrictLower.HasValue || WeakLower.HasValue || StrictUpper.HasValue || WeakUpper.HasValue;
+
+            /// <summary>要求当前值 &gt; 该数。</summary>
+            public double? StrictLower { get; private set; }
+
+            /// <summary>要求当前值 &gt;= 该数。</summary>
+            public double? WeakLower { get; private set; }
+
+            /// <summary>要求当前值 &lt; 该数。</summary>
+            public double? StrictUpper { get; private set; }
+
+            /// <summary>要求当前值 &lt;= 该数。</summary>
+            public double? WeakUpper { get; private set; }
+
+            public static EquationNumericBoundsFilter ParseFromUserText(string? userInput)
+            {
+                var f = new EquationNumericBoundsFilter();
+                string t = userInput ?? "";
+                if (string.IsNullOrWhiteSpace(t))
+                {
+                    return f;
+                }
+
+                foreach (Match m in Regex.Matches(t, @"(?:大于|超过|高于)\s*(\d+(?:\.\d+)?)"))
+                {
+                    f.TightenStrictLower(ParseD(m.Groups[1].Value));
+                }
+
+                foreach (Match m in Regex.Matches(t, @"(?:小于|低于)\s*(\d+(?:\.\d+)?)"))
+                {
+                    f.TightenStrictUpper(ParseD(m.Groups[1].Value));
+                }
+
+                foreach (Match m in Regex.Matches(t, @"(?:不小于|至少)\s*(\d+(?:\.\d+)?)"))
+                {
+                    f.TightenWeakLower(ParseD(m.Groups[1].Value));
+                }
+
+                foreach (Match m in Regex.Matches(t, @"(?:不大于|最多)\s*(\d+(?:\.\d+)?)"))
+                {
+                    f.TightenWeakUpper(ParseD(m.Groups[1].Value));
+                }
+
+                foreach (Match m in Regex.Matches(t, @"(?:>=|≥)\s*(\d+(?:\.\d+)?)"))
+                {
+                    f.TightenWeakLower(ParseD(m.Groups[1].Value));
+                }
+
+                foreach (Match m in Regex.Matches(t, @"(?:<=|≤)\s*(\d+(?:\.\d+)?)"))
+                {
+                    f.TightenWeakUpper(ParseD(m.Groups[1].Value));
+                }
+
+                foreach (Match m in Regex.Matches(t, @">\s*(\d+(?:\.\d+)?)"))
+                {
+                    f.TightenStrictLower(ParseD(m.Groups[1].Value));
+                }
+
+                foreach (Match m in Regex.Matches(t, @"<\s*(\d+(?:\.\d+)?)"))
+                {
+                    f.TightenStrictUpper(ParseD(m.Groups[1].Value));
+                }
+
+                foreach (Match m in Regex.Matches(t, @"(\d+(?:\.\d+)?)\s*以上"))
+                {
+                    f.TightenWeakLower(ParseD(m.Groups[1].Value));
+                }
+
+                foreach (Match m in Regex.Matches(t, @"(\d+(?:\.\d+)?)\s*以下"))
+                {
+                    f.TightenWeakUpper(ParseD(m.Groups[1].Value));
+                }
+
+                return f;
+            }
+
+            public bool Passes(double v)
+            {
+                if (!IsActive)
+                {
+                    return true;
+                }
+
+                if (StrictLower.HasValue && v <= StrictLower.Value)
+                {
+                    return false;
+                }
+
+                if (WeakLower.HasValue && v < WeakLower.Value)
+                {
+                    return false;
+                }
+
+                if (StrictUpper.HasValue && v >= StrictUpper.Value)
+                {
+                    return false;
+                }
+
+                if (WeakUpper.HasValue && v > WeakUpper.Value)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            private static double ParseD(string s)
+            {
+                return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
+                    ? v
+                    : double.NaN;
+            }
+
+            private void TightenStrictLower(double n)
+            {
+                if (double.IsNaN(n))
+                {
+                    return;
+                }
+
+                StrictLower = StrictLower.HasValue ? Math.Max(StrictLower.Value, n) : n;
+            }
+
+            private void TightenStrictUpper(double n)
+            {
+                if (double.IsNaN(n))
+                {
+                    return;
+                }
+
+                StrictUpper = StrictUpper.HasValue ? Math.Min(StrictUpper.Value, n) : n;
+            }
+
+            private void TightenWeakLower(double n)
+            {
+                if (double.IsNaN(n))
+                {
+                    return;
+                }
+
+                WeakLower = WeakLower.HasValue ? Math.Max(WeakLower.Value, n) : n;
+            }
+
+            private void TightenWeakUpper(double n)
+            {
+                if (double.IsNaN(n))
+                {
+                    return;
+                }
+
+                WeakUpper = WeakUpper.HasValue ? Math.Min(WeakUpper.Value, n) : n;
+            }
+        }
+
+        private static List<BridgeEquationInfo> ApplyEquationNumericBoundsFilter(
+            List<BridgeEquationInfo> source,
+            EquationNumericBoundsFilter bounds)
+        {
+            if (source == null || source.Count == 0 || !bounds.IsActive)
+            {
+                return source?.ToList() ?? new List<BridgeEquationInfo>();
+            }
+
+            var list = new List<BridgeEquationInfo>();
+            foreach (BridgeEquationInfo e in source)
+            {
+                if (!TryParseEquationNumericValue(e.Value, out double v))
+                {
+                    continue;
+                }
+
+                if (bounds.Passes(v))
+                {
+                    list.Add(e);
+                }
+            }
+
+            return list;
+        }
+
         private static BridgeEquationInfo SelectBestEquationCandidate(
             string equationKeyword,
             string userInput,
@@ -964,8 +1729,28 @@ $@"请从下面这句中文中提取“是否要修改方程变量值”。
                 }
             }
 
-            // 轻微偏向变量名更短（通常更“主变量”）
-            score += 1.0 / Math.Max(8.0, variable.Length + 1.0);
+            if (string.Equals(kw, "尺寸", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(kw, "尺度", StringComparison.OrdinalIgnoreCase))
+            {
+                if (Regex.IsMatch(
+                        variableLower,
+                        @"(长|宽|高|厚|深|径|距|直径|半径|外长|外宽|外高|内长|内宽|内高|长度|宽度|高度|总长|总宽|总高|外包|外形|轮廓)"))
+                {
+                    score += 0.48;
+                }
+            }
+
+            // 轻微偏向变量名更短；若关键词与变量名明显无关，减弱该偏置，避免「尺寸」类泛词误选短名无关变量
+            double lengthBias = 1.0 / Math.Max(8.0, variable.Length + 1.0);
+            if (!string.IsNullOrWhiteSpace(kw) &&
+                !variableLower.Contains(kwLower) &&
+                kw.Length >= 2 &&
+                !Regex.IsMatch(variableLower, @"(长|宽|高|厚|深|径|距|直径|半径|长度|宽度|高度)"))
+            {
+                lengthBias *= 0.22;
+            }
+
+            score += lengthBias;
             return score;
         }
 
@@ -1050,19 +1835,28 @@ $@"请从下面这句中文中提取“是否要修改方程变量值”。
             List<ChatTurn> chatHistory,
             ChatHistoryStore historyStore)
         {
+            var result = ExecuteEquationUpdateTaskLoopCore(userInput, equationKeyword, targetValue, swBridgeClient);
+            await ReplyFromObservationAsync(
+                llmService,
+                chatHistory,
+                historyStore,
+                userInput,
+                result.Success ? $"动作成功：{result.Message}" : $"动作失败：{result.Message}",
+                "");
+        }
+
+        private static (bool Success, string Message) ExecuteEquationUpdateTaskLoopCore(
+            string userInput,
+            string equationKeyword,
+            string targetValue,
+            SwCommandBridgeClient swBridgeClient)
+        {
             PrintActionCall("list_current_variant_equations", $"keyword={equationKeyword}");
             var (okList, listMessage, equations) = swBridgeClient.ListCurrentVariantEquations(equationKeyword);
             PrintActionResult("list_current_variant_equations", okList, listMessage);
             if (!okList)
             {
-                await ReplyFromObservationAsync(
-                    llmService,
-                    chatHistory,
-                    historyStore,
-                    userInput,
-                    $"动作失败：{listMessage}",
-                    "");
-                return;
+                return (false, listMessage);
             }
 
             if (equations.Count == 0)
@@ -1072,27 +1866,25 @@ $@"请从下面这句中文中提取“是否要修改方程变量值”。
                 PrintActionResult("list_current_variant_equations", okFallback, fallbackMessage);
                 if (!okFallback)
                 {
-                    await ReplyFromObservationAsync(
-                        llmService,
-                        chatHistory,
-                        historyStore,
-                        userInput,
-                        $"动作失败：未找到与「{equationKeyword}」相关的方程式（且回退检索失败：{fallbackMessage}）",
-                        "");
-                    return;
+                    return (false, $"未找到与「{equationKeyword}」相关的方程式（且回退检索失败：{fallbackMessage}）");
                 }
 
                 equations = allEquations ?? new List<BridgeEquationInfo>();
                 if (equations.Count == 0)
                 {
-                    await ReplyFromObservationAsync(
-                        llmService,
-                        chatHistory,
-                        historyStore,
-                        userInput,
-                        $"动作失败：当前机型没有可修改的方程式",
-                        "");
-                    return;
+                    return (false, "当前机型没有可修改的方程式");
+                }
+            }
+
+            EquationNumericBoundsFilter valueBoundsAbs = EquationNumericBoundsFilter.ParseFromUserText(userInput);
+            if (valueBoundsAbs.IsActive)
+            {
+                int beforeCount = equations.Count;
+                equations = ApplyEquationNumericBoundsFilter(equations, valueBoundsAbs);
+                if (equations.Count == 0)
+                {
+                    return (false,
+                        $"句中含数值范围条件，但当前机型没有「当前值为数字且满足该条件」的方程式（过滤前 {beforeCount} 条）。");
                 }
             }
 
@@ -1109,10 +1901,22 @@ $@"请从下面这句中文中提取“是否要修改方程变量值”。
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
                 var chosen = rankedCandidates[attempt];
+                string actualTargetValue = targetValue;
+                if (TryParseRelativeValueDirective(targetValue, out double relativeDelta))
+                {
+                    if (!TryParseEquationNumericValue(chosen.Value, out double currentValue))
+                    {
+                        lastFailure = $"变量 {chosen.Variable} 当前值非数字，无法按相对值计算：{chosen.Value}";
+                        continue;
+                    }
+
+                    actualTargetValue = FormatNumericValue(currentValue + relativeDelta);
+                }
+
                 PrintActionCall(
                     "update_current_variant_equation",
-                    $"variable={chosen.Variable}, value={targetValue}, applyNow=true, loopAttempt={attempt + 1}/{maxAttempts}");
-                var (okUpdate, msgUpdate) = swBridgeClient.UpdateCurrentVariantEquation(chosen.Variable, targetValue, applyNow: true);
+                    $"variable={chosen.Variable}, value={actualTargetValue}, applyNow=true, loopAttempt={attempt + 1}/{maxAttempts}");
+                var (okUpdate, msgUpdate) = swBridgeClient.UpdateCurrentVariantEquation(chosen.Variable, actualTargetValue, applyNow: true);
                 PrintActionResult("update_current_variant_equation", okUpdate, msgUpdate);
                 if (!okUpdate)
                 {
@@ -1126,35 +1930,19 @@ $@"请从下面这句中文中提取“是否要修改方程变量值”。
                     continue;
                 }
 
-                bool verifyOk = VerifyEquationUpdated(swBridgeClient, chosen.Variable, targetValue);
+                bool verifyOk = VerifyEquationUpdated(swBridgeClient, chosen.Variable, actualTargetValue);
                 if (verifyOk)
                 {
-                    string extra = rankedCandidates.Count > 1
-                        ? $"任务循环完成：第 {attempt + 1} 次命中 [{chosen.Part}] #{chosen.Index} {chosen.Variable}（候选 {rankedCandidates.Count} 条）"
-                        : $"任务循环完成：命中变量 {chosen.Variable}";
-                    await ReplyFromObservationAsync(
-                        llmService,
-                        chatHistory,
-                        historyStore,
-                        userInput,
-                        $"动作成功：{msgUpdate}",
-                        extra);
-                    return;
+                    return (true, $"已更新变量 {chosen.Variable} 为 {actualTargetValue}");
                 }
 
-                lastFailure = $"已执行但校验未通过（变量 {chosen.Variable} 仍未确认更新为 {targetValue}）";
+                lastFailure = $"已执行但校验未通过（变量 {chosen.Variable} 仍未确认更新为 {actualTargetValue}）";
             }
 
             string failMessage = string.IsNullOrWhiteSpace(lastFailure)
                 ? $"尝试了 {maxAttempts} 次仍未完成方程式更新"
                 : $"尝试了 {maxAttempts} 次仍未完成方程式更新，最后一次：{lastFailure}";
-            await ReplyFromObservationAsync(
-                llmService,
-                chatHistory,
-                historyStore,
-                userInput,
-                $"动作失败：{failMessage}",
-                "");
+            return (false, failMessage);
         }
 
         private static bool VerifyEquationUpdated(SwCommandBridgeClient swBridgeClient, string variableName, string expectedValue)
@@ -1213,6 +2001,62 @@ $@"请从下面这句中文中提取“是否要修改方程变量值”。
                 .ToLowerInvariant();
         }
 
+        private static bool TryParseEquationNumericValue(string raw, out double value)
+        {
+            value = 0;
+            string s = (raw ?? "").Trim()
+                .Replace("\"", "")
+                .Replace("“", "")
+                .Replace("”", "")
+                .Trim();
+
+            Match m = Regex.Match(s, @"[-+]?\d+(?:\.\d+)?");
+            if (!m.Success)
+            {
+                return false;
+            }
+
+            return double.TryParse(m.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static bool TryParseRelativeValueDirective(string raw, out double delta)
+        {
+            delta = 0;
+            string text = (raw ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            Match m = Regex.Match(text, @"^(加|减)\s*([+-]?\d+(?:\.\d+)?)$");
+            if (m.Success)
+            {
+                if (!double.TryParse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double amount))
+                {
+                    return false;
+                }
+
+                delta = m.Groups[1].Value == "减" ? -Math.Abs(amount) : Math.Abs(amount);
+                return true;
+            }
+
+            // LLM 常输出「+200」「-12.5」
+            m = Regex.Match(text, @"^\s*([+-])\s*(\d+(?:\.\d+)?)\s*$");
+            if (m.Success &&
+                double.TryParse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double signedAmt))
+            {
+                delta = m.Groups[1].Value == "-" ? -signedAmt : signedAmt;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string FormatNumericValue(double value)
+        {
+            return value.ToString("0.###############", CultureInfo.InvariantCulture);
+        }
+
         private static bool IsAskClearHistory(string input)
         {
             string t = (input ?? "").Trim();
@@ -1266,19 +2110,53 @@ $@"请从下面这句中文中提取“是否要修改方程变量值”。
 
         private static void PrintActionCall(string actionName, string argument = "")
         {
+            string line;
             if (string.IsNullOrWhiteSpace(argument))
             {
-                Console.WriteLine($"[调用] {actionName}");
+                line = $"[调用] {actionName}";
             }
             else
             {
-                Console.WriteLine($"[调用] {actionName} ({argument})");
+                line = $"[调用] {actionName} ({argument})";
             }
+            Console.WriteLine(line);
+            AddTurnActionTrace(line);
         }
 
         private static void PrintActionResult(string actionName, bool success, string message)
         {
-            Console.WriteLine($"[回执] {actionName} => {(success ? "成功" : "失败")} | {message}");
+            string line = $"[回执] {actionName} => {(success ? "成功" : "失败")} | {message}";
+            Console.WriteLine(line);
+            AddTurnActionTrace(line);
+        }
+
+        private static void ResetTurnActionTrace()
+        {
+            CurrentTurnActionTrace.Clear();
+        }
+
+        private static void AddTurnActionTrace(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return;
+            }
+
+            CurrentTurnActionTrace.Add(line.Trim());
+            if (CurrentTurnActionTrace.Count > 18)
+            {
+                CurrentTurnActionTrace.RemoveAt(0);
+            }
+        }
+
+        private static string BuildActionTraceSummary()
+        {
+            if (CurrentTurnActionTrace.Count == 0)
+            {
+                return "";
+            }
+
+            return "本次调用链：" + string.Join(" -> ", CurrentTurnActionTrace);
         }
     }
 }
